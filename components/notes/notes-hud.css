@@ -1,0 +1,121 @@
+/*
+  NOTES — MISSION CONSOLE THEME
+  ------------------------------
+  Scoped entirely under `.notes-hud`. This overrides the same design-token
+  variables the rest of the app already reads (--signal, --pulse, --void,
+  --surface, --ink, --mist, --border) so every existing utility class
+  (bg-signal, text-signal, bg-pulse, border-border, text-mist, glass-panel…)
+  used inside the Notes tree just picks up the new palette automatically.
+  Nothing outside an element with the `.notes-hud` class is affected.
+*/
+
+.notes-hud {
+  --void: 220 26% 6%;
+  --surface: 220 22% 10%;
+  --surface-raised: 220 20% 14%;
+  --ink: 210 25% 93%;
+  --mist: 215 12% 58%;
+
+  --signal: 158 64% 55%;              /* HUD green — primary */
+  --signal-soft: 158 64% 55% / 0.12;
+  --pulse: 34 92% 58%;                /* HUD amber — secondary / CTA */
+  --pulse-soft: 34 92% 58% / 0.16;
+
+  --success: 158 64% 55%;
+  --danger: 356 80% 62%;
+  --border: 216 20% 20%;
+
+  --background: var(--void);
+  --foreground: var(--ink);
+
+  color: hsl(var(--ink));
+  background:
+    repeating-linear-gradient(
+      180deg,
+      hsl(0 0% 100% / 0.015) 0px,
+      hsl(0 0% 100% / 0.015) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(ellipse at top, hsl(220 30% 9%), hsl(220 28% 4%) 70%);
+}
+
+/* Thin, on-theme scrollbars everywhere inside the console */
+.notes-hud ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.notes-hud ::-webkit-scrollbar-thumb {
+  background: hsl(var(--signal) / 0.35);
+  border-radius: 9999px;
+}
+.notes-hud ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Monospace telemetry-style text for stats, counts, timestamps */
+.hud-readout {
+  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.03em;
+}
+
+/* Soft glow for headings/brand marks */
+.hud-glow {
+  text-shadow: 0 0 14px hsl(var(--signal) / 0.45);
+}
+
+/* Small pulsing status dot */
+.hud-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: hsl(var(--signal));
+  box-shadow: 0 0 0 0 hsl(var(--signal) / 0.55);
+  animation: hud-pulse 2.2s infinite;
+}
+
+@keyframes hud-pulse {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--signal) / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px hsl(var(--signal) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--signal) / 0);
+  }
+}
+
+/* Tactical bracket-corner frame — pure CSS, no extra markup needed.
+   Apply to any relatively-positioned panel. */
+.hud-frame {
+  position: relative;
+}
+.hud-frame::before {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.5;
+  background-image: linear-gradient(to right, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to bottom, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to left, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to bottom, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to right, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to top, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to left, hsl(var(--signal)) 2px, transparent 2px),
+    linear-gradient(to top, hsl(var(--signal)) 2px, transparent 2px);
+  background-repeat: no-repeat;
+  background-size:
+    12px 2px, 2px 12px,
+    12px 2px, 2px 12px,
+    12px 2px, 2px 12px,
+    12px 2px, 2px 12px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+}
