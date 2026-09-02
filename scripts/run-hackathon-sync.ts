@@ -35,6 +35,8 @@
  * add one later, follow the same "command" case pattern below.
  */
 
+export {};
+
 /**
  * Loads .env into process.env, synchronously, before any other module in
  * this process is imported. Safe to call in CI (GitHub Actions) where no

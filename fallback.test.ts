@@ -15,6 +15,8 @@
  *      internal Gemini->Grok handoff.
  */
 
+export {};
+
 process.env.GEMINI_API_KEY_1 = "fake-gemini-key-1";
 process.env.GEMINI_API_KEY_2 = "fake-gemini-key-2";
 process.env.GROK_API_KEY_1 = "fake-grok-key-1";
@@ -55,7 +57,7 @@ global.fetch = async (url: string, init: any) => {
 };
 
 async function main() {
-  const { runAI } = await import("../ai/engine");
+  const { runAI } = await import("./lib/ai/engine");
 
   let creditChargeCount = 0;
   function chargeCreditOnce() {

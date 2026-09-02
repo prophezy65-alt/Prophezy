@@ -260,7 +260,7 @@ function diversifyByCompany(items: InternshipRecord[]): InternshipRecord[] {
     for (const key of order) {
       const bucket = buckets.get(key)!;
       if (round < bucket.length) {
-        result.push(bucket[round]);
+        result.push(bucket[round]!);
         addedThisRound = true;
       }
     }

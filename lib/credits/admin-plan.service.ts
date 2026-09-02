@@ -74,7 +74,7 @@ export async function setUserPlan(
     p_admin_id: user.id,
     p_user_id: targetUserId,
     p_plan_tier: planTier,
-    p_reason: reason ?? null,
+    p_reason: reason ?? undefined,
   });
   if (error) throw error;
 

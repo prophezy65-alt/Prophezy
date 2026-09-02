@@ -48,7 +48,7 @@ function meshBlobs(seed: number, hue: number, accentHue: number, uid: string): s
     { cx: 320 + prand(seed, 5) * 80, cy: 40 + prand(seed, 6) * 30, r: 100, hue: (hue + accentHue) / 2, op: 0.4 },
   ];
   for (let i = 0; i < positions.length; i++) {
-    const p = positions[i];
+    const p = positions[i]!;
     blobs.push(
       `<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="hsla(${p.hue},92%,58%,${p.op})" filter="url(#blur-${uid})" />`
     );

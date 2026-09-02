@@ -79,7 +79,7 @@ export async function extractCitations(userId: string, paperId: string): Promise
 
   researchLogger.info("citations.extraction_started", { userId, paperId });
 
-  const cacheKey = buildCacheKey("citations", FEATURE_MODEL_MAP.research, { sourceText });
+  const cacheKey = buildCacheKey("citations", FEATURE_MODEL_MAP.research!, { sourceText });
 
   let result: Awaited<ReturnType<typeof runCitationExtraction>>;
   let cacheHit: boolean;

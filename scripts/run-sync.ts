@@ -44,6 +44,8 @@
  *   tsx scripts/run-sync.ts notify --job=deadlines
  */
 
+export {};
+
 /**
  * Loads .env into process.env, synchronously, before any other module in
  * this process is imported. Safe to call in CI (GitHub Actions) where no
@@ -53,8 +55,6 @@
 function loadEnv(): void {
   const path = process.env.ENV_FILE ?? '.env';
   try {
-    // @ts-expect-error — process.loadEnvFile exists at runtime (Node 20.12+ / 21.7+)
-    // but may not yet be in the @types/node version pinned by this repo.
     process.loadEnvFile(path);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

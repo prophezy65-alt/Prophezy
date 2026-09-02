@@ -47,7 +47,7 @@ export async function ensureWithinContextWindow(
   // fallback) before. Swapped for the same reason as the OCR/PDF call sites.
   const summaryResult = await generateWithFallback(
     [{ role: "user", parts: [{ text: summaryPrompt }] }],
-    { model: "gemini-2.5-flash-lite", temperature: 0.2, maxOutputTokens: 512, feature: "context-summary" }
+    { model: "gemini-3.5-flash-lite", temperature: 0.2, maxOutputTokens: 512, feature: "context-summary" }
   );
 
   const newSummary = summaryResult.text.trim();

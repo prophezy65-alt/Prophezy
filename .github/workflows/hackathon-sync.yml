@@ -1,0 +1,79 @@
+# .github/workflows/hackathon-sync.yml
+#
+# Runs the hackathon aggregation engine once a day. Completely separate
+# from the internship sync workflow — different file, different job name,
+# no shared triggers or steps — per "keep the internship and hackathon
+# systems completely isolated." Uses only GitHub Actions' own free
+# scheduled-workflow feature; no third-party or paid cron service.
+#
+# Calls scripts/run-hackathon-sync.ts directly (npx tsx ...), the same way
+# the internship engine's workflow presumably calls scripts/run-sync.ts —
+# I don't have that workflow file to copy verbatim, so this mirrors the
+# CLI script's own documented usage instead. If your actual internship
+# workflow does anything differently (Node version, cache strategy, a
+# required check before running), tell me and I'll align this file to
+# match exactly.
+
+name: Hackathon Sync
+
+"on":
+  schedule:
+    # 03:00 UTC daily. GitHub's schedule trigger can be delayed by several
+    # minutes during high load — expected, harmless for a daily job.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run a full re-sync instead of incremental (ignores last-successful-sync cursor)"
+        type: boolean
+        default: false
+      providers:
+        description: "Comma-separated provider keys to sync (leave empty for all implemented providers)"
+        type: string
+        default: ""
+
+# Prevents two runs overlapping if a manual dispatch fires while the
+# scheduled run is still in flight (or vice versa) — avoids two syncs
+# writing to hackathon_sync_logs/hackathons concurrently.
+concurrency:
+  group: hackathon-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync hackathon listings
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run hackathon sync
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARGS="sync"
+          if [ "${{ inputs.full }}" = "true" ]; then
+            ARGS="$ARGS --full"
+          fi
+          if [ -n "${{ inputs.providers }}" ]; then
+            ARGS="$ARGS --providers=${{ inputs.providers }}"
+          fi
+          echo "Running: npx tsx scripts/run-hackathon-sync.ts $ARGS"
+          npx tsx scripts/run-hackathon-sync.ts $ARGS
+
+      - name: Fail the workflow if the sync reported failures
+        if: failure()
+        run: echo "::error::Hackathon sync failed or one or more providers reported errors — check the 'Run hackathon sync' step's output above."

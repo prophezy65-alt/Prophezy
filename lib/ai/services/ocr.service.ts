@@ -108,7 +108,7 @@ export async function ocrWithVisionFallback(
   // also meant it bypassed the Gemini->Grok fallback. Routed through the
   // same provider-router.ts everything else uses, so OCR gets covered too.
   const result = await generateWithFallback(messages, {
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.1,
     maxOutputTokens: 4096,
     requestId: opts.requestId,

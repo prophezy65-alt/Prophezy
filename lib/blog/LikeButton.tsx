@@ -15,9 +15,8 @@ export default function LikeButton({ slug, initialCount }: { slug: string; initi
   useEffect(() => {
     const deviceId = getDeviceId();
     const supabase = getBrowserSupabase();
-    supabase
-      .rpc("get_blog_like_state", { p_slug: slug, p_device_id: deviceId })
-      .then(({ data }) => {
+    (supabase.rpc as any)("get_blog_like_state", { p_slug: slug, p_device_id: deviceId })
+      .then(({ data }: { data: any }) => {
         const row = Array.isArray(data) ? data[0] : data;
         if (row) {
           setLiked(Boolean(row.liked));
@@ -40,7 +39,7 @@ export default function LikeButton({ slug, initialCount }: { slug: string; initi
     setLiked((prev) => !prev);
     setCount((prev) => prev + (liked ? -1 : 1));
 
-    const { data, error } = await supabase.rpc("toggle_blog_like", { p_slug: slug, p_device_id: deviceId });
+    const { data, error } = await (supabase.rpc as any)("toggle_blog_like", { p_slug: slug, p_device_id: deviceId });
     if (!error && data) {
       const row = Array.isArray(data) ? data[0] : data;
       if (row) {

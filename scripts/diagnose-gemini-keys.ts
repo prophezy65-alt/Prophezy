@@ -266,7 +266,7 @@ async function testKey(varName: string, model: string): Promise<KeyResult> {
 async function main() {
   console.log(`Found ${varNames.length} Gemini credential(s): ${varNames.join(", ")}\n`);
 
-  const firstKey = process.env[varNames[0]] as string;
+  const firstKey = process.env[varNames[0]!] as string;
   const { model, listOk, listDetail } = await resolveTestModel(firstKey);
   console.log(`Test model: ${model}  (${listOk ? "confirmed live" : "fallback"})`);
   console.log(`${listDetail}\n`);

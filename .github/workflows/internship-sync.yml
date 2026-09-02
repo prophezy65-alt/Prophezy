@@ -1,0 +1,70 @@
+name: Internship Sync
+
+# Runs automatically every 12 hours. workflow_dispatch is included only so a
+# human can trigger an ad-hoc run from the Actions tab while testing — the
+# schedule below is what actually drives the autonomous pipeline.
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: internship-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run provider health sweep
+        # Calls the CLI directly rather than `npm run internships:health` — that npm
+        # script passes --env-file=.env, which doesn't exist in CI (secrets below are
+        # injected as real process env vars instead).
+        run: npx tsx scripts/run-sync.ts health
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GREENHOUSE_BOARD_TOKENS: ${{ secrets.GREENHOUSE_BOARD_TOKENS }}
+          LEVER_SITES: ${{ secrets.LEVER_SITES }}
+          ASHBY_BOARDS: ${{ secrets.ASHBY_BOARDS }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+
+      - name: Run sync
+        # Incremental: only postings updated since each provider's last successful run.
+        # Trigger this workflow manually with `workflow_dispatch` if you ever need a full re-sync
+        # (add `--full` to the command below for that one-off run).
+        run: npx tsx scripts/run-sync.ts sync
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GREENHOUSE_BOARD_TOKENS: ${{ secrets.GREENHOUSE_BOARD_TOKENS }}
+          LEVER_SITES: ${{ secrets.LEVER_SITES }}
+          ASHBY_BOARDS: ${{ secrets.ASHBY_BOARDS }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.APP_URL }}
+
+      # No separate log-upload step: the logger (lib/internships/utils/logger.ts)
+      # emits structured JSON lines to stdout, which GitHub Actions already
+      # captures in the run's own log — visible under the step above.

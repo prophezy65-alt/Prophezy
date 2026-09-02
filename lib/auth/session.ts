@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { UserRole } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
+
+type UserRole = Database["public"]["Enums"]["user_role"];
 
 /** Returns the signed-in user, or null. Never redirects — use in places
  *  where an anonymous visitor is a valid state (e.g. the landing page). */

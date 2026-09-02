@@ -75,9 +75,10 @@ export default function ContactModal({ isOpen, onClose }: { isOpen: boolean; onC
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
         'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       );
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
+      if (focusable.length === 0) return;
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
 
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();

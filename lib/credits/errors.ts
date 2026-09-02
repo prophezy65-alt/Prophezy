@@ -46,7 +46,7 @@ export class InsufficientCreditsError extends Error {
 /** Thrown when a credit-system RPC fails for a reason other than
  * insufficient balance (missing balance row, auth.uid() null, etc). */
 export class CreditSystemError extends Error {
-  cause?: unknown;
+  override cause?: unknown;
   constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "CreditSystemError";

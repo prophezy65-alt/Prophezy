@@ -1,3 +1,5 @@
+export {};
+
 // No GROK_API_KEY* set at all -> must behave EXACTLY like before this change:
 // Gemini exhaustion throws AIAllKeysExhaustedError straight through, no crash.
 process.env.GEMINI_API_KEY_1 = "fake-gemini-key-1";
@@ -13,7 +15,7 @@ global.fetch = async (url: string) => {
 };
 
 async function main() {
-  const { runAI } = await import("../ai/engine");
+  const { runAI } = await import("./lib/ai/engine");
   try {
     await runAI({
       feature: "career", userId: "u1", systemInstruction: "sys",

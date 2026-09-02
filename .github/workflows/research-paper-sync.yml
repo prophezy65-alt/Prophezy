@@ -1,0 +1,82 @@
+# .github/workflows/research-paper-sync.yml
+#
+# Background Research Paper Automation Agent. Structured to match the
+# conventions in hackathon-sync.yml / internship-sync.yml (quoted "on":,
+# typed workflow_dispatch inputs, concurrency guard, secrets only through
+# env:, no separate log-upload step, a final "fail loudly" step).
+#
+# Two modes, both calling the same script:
+#   - Scheduled (daily, 06:00 UTC): light mode — ~40 domains, 1 page each,
+#     finishes in a few minutes. Keeps the library fresh without hammering
+#     arXiv every day for papers it already has.
+#   - Manual with `deep: true`: the initial-backfill sweep — ~40 domains,
+#     6 pages each, aiming for 5,000+ real unique papers in one run. This
+#     is slow by design (arXiv's own rate-limit policy — see the script's
+#     header comment), hence the much longer timeout below. Run this once
+#     to seed the library, then let the daily light sync keep it current.
+#
+# Your two existing workflows disagree with each other on the Supabase URL
+# secret's name (internship-sync.yml: secrets.SUPABASE_URL, hackathon-sync
+# .yml: secrets.NEXT_PUBLIC_SUPABASE_URL) — this accepts either.
+
+name: Research Paper Sync
+
+"on":
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: "Run the deep backfill sweep (~40 domains x 6 pages, aims for 5,000+ papers, takes ~15-20 min) instead of the light daily sync"
+        type: boolean
+        default: false
+      queries:
+        description: "Comma-separated domain override (blank = built-in ~40-domain list)"
+        type: string
+        default: ""
+      pagesPerDomain:
+        description: "Override pages fetched per domain (blank = 1 for light, 6 for deep)"
+        type: string
+        default: ""
+
+concurrency:
+  group: research-paper-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync research papers
+    runs-on: ubuntu-latest
+    # Deep mode can run close to 20 minutes purely from arXiv's mandated
+    # 3-second inter-request delay across ~240 requests — this is not a
+    # sign anything is stuck.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run paper sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEARCH_SYNC_DEEP: ${{ inputs.deep || 'false' }}
+          RESEARCH_SYNC_QUERIES: ${{ inputs.queries }}
+          RESEARCH_SYNC_PAGES_PER_DOMAIN: ${{ inputs.pagesPerDomain }}
+        run: npx tsx scripts/sync-research-papers.ts
+        # Secrets only ever flow through env: here, never interpolated into
+        # `run:` shell text. The script's own logging is structured JSON of
+        # domain/paper counts only — never the env it read.
+
+      - name: Fail the workflow if the sync reported failures
+        if: failure()
+        run: echo "::error::Research paper sync failed — check the 'Run paper sync' step's output above."

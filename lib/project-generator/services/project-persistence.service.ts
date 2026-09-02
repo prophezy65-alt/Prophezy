@@ -6,16 +6,18 @@
  * directly, matching the pattern already used by
  * lib/flashcards/services/flashcards.service.ts.
  *
- * NOTE: `project_generator_projects` / `project_generator_milestones` are
- * new tables (see migrations/0001_project_generator_projects.sql) that
- * won't exist in your generated `lib/supabase/types.ts` until you apply
- * the migration and run `npx supabase gen types typescript ...` again.
- * Until then this file uses local row types instead of
- * `Database["public"]["Tables"][...]` — swap the `Row`/`Insert`/`Update`
- * type aliases below for the generated ones once you regenerate.
+ * `project_generator_projects` / `project_generator_milestones` now exist
+ * in the live database (migrations/0001_project_generator_projects.sql)
+ * and in the generated `lib/supabase/types.ts`. JSONB columns (spec,
+ * database_schema, api_design, roadmap, diagrams, deployment_plan,
+ * testing_plan, security_plan, estimation) are typed `Json` by the
+ * generator, which is stricter than our domain interfaces (they have no
+ * index signature), so writes go through `as unknown as Json` — the data
+ * itself is unchanged, this only satisfies TypeScript.
  */
 
 import { createClient } from "@/lib/supabase/server";
+import type { Database, Json } from "@/lib/supabase/types";
 import type {
   ProjectSpec,
   DatabaseSchema,
@@ -30,7 +32,7 @@ import type {
 
 export type SavedProjectStatus = "draft" | "generating" | "ready" | "failed";
 
-/** Mirrors the `project_generator_projects` row shape until real generated types exist. */
+/** Mirrors the `project_generator_projects` row shape. */
 export interface SavedProjectRow {
   id: string;
   user_id: string;
@@ -128,19 +130,19 @@ export const projectPersistenceService = {
         title: result.spec.title,
         tagline: result.spec.tagline,
         description: result.spec.description,
-        domains: result.spec.domains,
+        domains: [...result.spec.domains],
         difficulty_score: result.spec.difficulty.score,
         complexity_score: result.spec.complexity.score,
         scale: result.spec.scale,
-        spec: result.spec,
-        database_schema: result.databaseSchema,
-        api_design: result.apiDesign,
-        roadmap: result.roadmap,
-        diagrams: result.diagrams,
-        deployment_plan: result.deploymentPlan,
-        testing_plan: result.testingPlan,
-        security_plan: result.securityPlan,
-        estimation: result.estimation,
+        spec: result.spec as unknown as Json,
+        database_schema: result.databaseSchema as unknown as Json,
+        api_design: result.apiDesign as unknown as Json,
+        roadmap: result.roadmap as unknown as Json,
+        diagrams: result.diagrams as unknown as Json,
+        deployment_plan: result.deploymentPlan as unknown as Json,
+        testing_plan: result.testingPlan as unknown as Json,
+        security_plan: result.securityPlan as unknown as Json,
+        estimation: result.estimation as unknown as Json,
         export_bundle_path: result.exportBundlePath,
       })
       .eq("id", projectId)
@@ -208,7 +210,7 @@ export const projectPersistenceService = {
 
   async update(projectId: string, userId: string, patch: ProjectEditableFields): Promise<SavedProjectRow> {
     const supabase = await createClient();
-    const dbPatch: Record<string, unknown> = {};
+    const dbPatch: Database["public"]["Tables"]["project_generator_projects"]["Update"] = {};
     if (patch.title !== undefined) dbPatch.title = patch.title;
     if (patch.description !== undefined) dbPatch.description = patch.description;
     if (patch.githubRepoUrl !== undefined) dbPatch.github_repo_url = patch.githubRepoUrl;
@@ -284,15 +286,15 @@ export const projectPersistenceService = {
         complexity_score: existing.complexity_score,
         scale: existing.scale,
         status: existing.status,
-        spec: existing.spec,
-        database_schema: existing.database_schema,
-        api_design: existing.api_design,
-        roadmap: existing.roadmap,
-        diagrams: existing.diagrams,
-        deployment_plan: existing.deployment_plan,
-        testing_plan: existing.testing_plan,
-        security_plan: existing.security_plan,
-        estimation: existing.estimation,
+        spec: existing.spec as unknown as Json,
+        database_schema: existing.database_schema as unknown as Json,
+        api_design: existing.api_design as unknown as Json,
+        roadmap: existing.roadmap as unknown as Json,
+        diagrams: existing.diagrams as unknown as Json,
+        deployment_plan: existing.deployment_plan as unknown as Json,
+        testing_plan: existing.testing_plan as unknown as Json,
+        security_plan: existing.security_plan as unknown as Json,
+        estimation: existing.estimation as unknown as Json,
         // Intentionally NOT copied: export_bundle_path (belongs to the
         // original's storage object), github_repo_url, demo_url, favorite,
         // archived, progress — a duplicate starts as a fresh, un-favorited

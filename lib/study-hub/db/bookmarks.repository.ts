@@ -22,8 +22,8 @@ function toBookmark(row: {
 export class BookmarksRepository {
   async list(userId: string, entityType?: StudyEntityType): Promise<Bookmark[]> {
     const supabase = await createClient();
-    let query = supabase
-      .from("bookmarks")
+    let query: any = supabase
+      .from("bookmarks" as any)
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
@@ -32,33 +32,34 @@ export class BookmarksRepository {
 
     const { data, error } = await query;
     if (error) throw new StudyHubError(error.message, "DB_READ_FAILED", 500);
-    return (data ?? []).map(toBookmark);
+    return ((data ?? []) as any[]).map(toBookmark);
   }
 
   async add(userId: string, entityType: StudyEntityType, entityId: string): Promise<Bookmark> {
     const supabase = await createClient();
     const { data, error } = await supabase
-      .from("bookmarks")
+      .from("bookmarks" as any)
       .upsert(
-        { user_id: userId, entity_type: entityType, entity_id: entityId },
+        { user_id: userId, entity_type: entityType, entity_id: entityId } as any,
         { onConflict: "user_id,entity_type,entity_id", ignoreDuplicates: false },
       )
       .select()
       .single();
 
     if (error || !data) throw new StudyHubError(error?.message ?? "Failed to bookmark.", "DB_WRITE_FAILED", 500);
-    return toBookmark(data);
+    return toBookmark(data as any);
   }
 
   async remove(userId: string, entityType: StudyEntityType, entityId: string): Promise<void> {
     const supabase = await createClient();
-    const { error } = await supabase
-      .from("bookmarks")
+    let query: any = supabase
+      .from("bookmarks" as any)
       .delete()
       .eq("user_id", userId)
       .eq("entity_type", entityType)
       .eq("entity_id", entityId);
 
+    const { error } = await query;
     if (error) throw new StudyHubError(error.message, "DB_WRITE_FAILED", 500);
   }
 }

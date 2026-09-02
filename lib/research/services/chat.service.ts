@@ -215,7 +215,8 @@ export async function streamResearchChat(params: StreamResearchChatParams): Prom
       `Research Paper AI chat is temporarily unavailable (no active credit cost configured for "${creditFeature}").`
     );
   }
-  await spendCredits(creditCost.creditCost, creditFeature, "Research paper chat query");
+  const creditCostAmount = creditCost.creditCost;
+  await spendCredits(creditCostAmount, creditFeature, "Research paper chat query");
 
   async function* streamAndPersist(): AsyncGenerator<StreamChunk, void, unknown> {
     let accumulated = "";
@@ -233,7 +234,7 @@ export async function streamResearchChat(params: StreamResearchChatParams): Prom
     } catch (err) {
       // Stream failed after the charge was already taken — refund, then
       // let the original error propagate to the caller unchanged.
-      await refundCredits(userId, creditCost.creditCost, creditFeature, "Refund: research chat stream failed").catch(() => {});
+      await refundCredits(userId, creditCostAmount, creditFeature, "Refund: research chat stream failed").catch(() => {});
       throw err;
     } finally {
       if (accumulated) {

@@ -52,7 +52,7 @@ const MAX_SCHEMA_REPAIR_ATTEMPTS = 3;
 const AI_CALL_TIMEOUT_MS = 4 * 60 * 1000;
 
 class AICallTimeoutError extends Error {
-  readonly name = "AITimeoutError";
+  override readonly name = "AITimeoutError";
   constructor(timeoutMs: number) {
     super(`AI Core call did not respond within ${timeoutMs}ms.`);
   }

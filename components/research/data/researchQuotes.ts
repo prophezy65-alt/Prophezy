@@ -11,6 +11,7 @@ export interface ResearchQuote {
   text: string;
   author: string;
 }
+
 export const RESEARCH_QUOTES: ResearchQuote[] = [
   { text: "If I have seen further, it is by standing on the shoulders of giants.", author: "Isaac Newton" },
   { text: "Research is what I'm doing when I don't know what I'm doing.", author: "Wernher von Braun" },
@@ -23,6 +24,7 @@ export const RESEARCH_QUOTES: ResearchQuote[] = [
   { text: "An investment in knowledge pays the best interest.", author: "Benjamin Franklin" },
   { text: "Study hard what interests you the most in the most undisciplined, irreverent, and original manner possible.", author: "Richard Feynman" },
 ];
+
 export function getQuoteOfTheDay(): ResearchQuote {
   const dayOfYear = Math.floor(
     (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000

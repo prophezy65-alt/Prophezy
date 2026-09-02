@@ -108,7 +108,7 @@ export async function generatePaperSummary(
 
   researchLogger.info("summary.generation_started", { userId, paperId, hasFullText });
 
-  const cacheKey = buildCacheKey("summary", FEATURE_MODEL_MAP.research, { title: paper.title, sourceText });
+  const cacheKey = buildCacheKey("summary", FEATURE_MODEL_MAP.research!, { title: paper.title, sourceText });
 
   let structured: PaperSummaryOutput;
   let cacheHit: boolean;
