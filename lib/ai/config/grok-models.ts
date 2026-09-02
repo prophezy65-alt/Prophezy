@@ -12,9 +12,7 @@
  * via GROK_MODEL_ID if the default below is retired before this file is
  * updated.
  */
-
 export type GrokModelId = string;
-
 export interface GrokModelProfile {
   id: GrokModelId;
   label: string;
@@ -24,17 +22,14 @@ export interface GrokModelProfile {
   costPer1kInputUsd: number;
   costPer1kOutputUsd: number;
 }
-
 // Your keys are Groq (gsk_...) keys, so this must be a Groq-hosted model
 // slug, not an xAI Grok slug. llama-3.3-70b-versatile was deprecated by
 // Groq in June 2026 — openai/gpt-oss-120b is their recommended
 // replacement. Override with GROK_MODEL_ID if you want a different Groq
 // model (see https://console.groq.com/docs/models).
 const FALLBACK_DEFAULT_MODEL_ID = "openai/gpt-oss-120b";
-
 export const DEFAULT_GROK_MODEL: GrokModelId =
   process.env.GROK_MODEL_ID?.trim() || FALLBACK_DEFAULT_MODEL_ID;
-
 export const GROK_MODELS: Record<string, GrokModelProfile> = {
   [DEFAULT_GROK_MODEL]: {
     id: DEFAULT_GROK_MODEL,
@@ -49,7 +44,6 @@ export const GROK_MODELS: Record<string, GrokModelProfile> = {
     costPer1kOutputUsd: 0.015,
   },
 };
-
 /**
  * Same per-feature routing concept as FEATURE_MODEL_MAP in config/models.ts,
  * but every feature currently maps to the same fallback model — Grok is a
@@ -57,9 +51,11 @@ export const GROK_MODELS: Record<string, GrokModelProfile> = {
  * entries here later if that ever changes.
  */
 export function resolveGrokModel(_feature: string): GrokModelProfile {
-  return GROK_MODELS[DEFAULT_GROK_MODEL];
+  // GROK_MODELS is always seeded with an entry keyed by DEFAULT_GROK_MODEL
+  // (see the object literal above), so this lookup can never actually be
+  // undefined at runtime — the `!` only satisfies TS's indexed-access typing.
+  return GROK_MODELS[DEFAULT_GROK_MODEL]!;
 }
-
 export function getGrokModelProfile(modelId: string): GrokModelProfile | undefined {
   return GROK_MODELS[modelId];
 }
