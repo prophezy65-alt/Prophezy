@@ -33,7 +33,7 @@ export async function GET(): Promise<NextResponse> {
   });
 
   const { count: recentFailures } = await supabase
-    .from("ai_usage_events")
+    .from("ai_usage_events" as any)
     .select("id", { count: "exact", head: true })
     .eq("success", false)
     .gte("created_at", new Date(Date.now() - 86_400_000).toISOString());
