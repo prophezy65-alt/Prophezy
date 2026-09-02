@@ -1,0 +1,42 @@
+{
+  "//": "Add a company here — no code changes needed. 'provider' must be one of: greenhouse, lever, ashby, workable. 'url' is the public job-board URL; the board token is extracted automatically. See note below on verification confidence for the India entries.",
+  "companies": [
+    { "name": "Razorpay", "provider": "greenhouse", "url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited" },
+    { "name": "Meesho", "provider": "lever", "url": "https://jobs.lever.co/meesho" },
+    { "name": "Hevo Data", "provider": "lever", "url": "https://jobs.lever.co/hevodata" },
+    { "name": "Plotline", "provider": "ashby", "url": "https://jobs.ashbyhq.com/plotlineso" },
+
+    { "name": "Stripe", "provider": "greenhouse", "url": "https://boards.greenhouse.io/stripe" },
+    { "name": "Anthropic", "provider": "greenhouse", "url": "https://boards.greenhouse.io/anthropic" },
+    { "name": "Discord", "provider": "greenhouse", "url": "https://boards.greenhouse.io/discord" },
+    { "name": "Databricks", "provider": "greenhouse", "url": "https://boards.greenhouse.io/databricks" },
+    { "name": "Figma", "provider": "greenhouse", "url": "https://boards.greenhouse.io/figma" },
+    { "name": "Instacart", "provider": "greenhouse", "url": "https://boards.greenhouse.io/instacart" },
+    { "name": "DoorDash", "provider": "greenhouse", "url": "https://boards.greenhouse.io/doordash" },
+    { "name": "Coinbase", "provider": "greenhouse", "url": "https://boards.greenhouse.io/coinbase" },
+    { "name": "Affirm", "provider": "greenhouse", "url": "https://boards.greenhouse.io/affirm" },
+    { "name": "Robinhood", "provider": "greenhouse", "url": "https://boards.greenhouse.io/robinhood" },
+
+    { "name": "Netflix", "provider": "lever", "url": "https://jobs.lever.co/netflix" },
+    { "name": "Palantir", "provider": "lever", "url": "https://jobs.lever.co/palantir" },
+    { "name": "Plaid", "provider": "lever", "url": "https://jobs.lever.co/plaid" },
+    { "name": "Brex", "provider": "lever", "url": "https://jobs.lever.co/brex" },
+    { "name": "Rippling", "provider": "lever", "url": "https://jobs.lever.co/rippling" },
+    { "name": "Eventbrite", "provider": "lever", "url": "https://jobs.lever.co/eventbrite" },
+    { "name": "Attentive", "provider": "lever", "url": "https://jobs.lever.co/attentive" },
+    { "name": "Reddit", "provider": "lever", "url": "https://jobs.lever.co/reddit" },
+    { "name": "Postman", "provider": "lever", "url": "https://jobs.lever.co/postman" },
+    { "name": "Netlify", "provider": "lever", "url": "https://jobs.lever.co/netlify" },
+
+    { "name": "OpenAI", "provider": "ashby", "url": "https://jobs.ashbyhq.com/openai" },
+    { "name": "Ramp", "provider": "ashby", "url": "https://jobs.ashbyhq.com/ramp" },
+    { "name": "Linear", "provider": "ashby", "url": "https://jobs.ashbyhq.com/linear" },
+    { "name": "Notion", "provider": "ashby", "url": "https://jobs.ashbyhq.com/notion" },
+    { "name": "Vercel", "provider": "ashby", "url": "https://jobs.ashbyhq.com/vercel" },
+    { "name": "Perplexity", "provider": "ashby", "url": "https://jobs.ashbyhq.com/perplexity" },
+    { "name": "Mercury", "provider": "ashby", "url": "https://jobs.ashbyhq.com/mercury" },
+    { "name": "Retool", "provider": "ashby", "url": "https://jobs.ashbyhq.com/retool" },
+    { "name": "Cohere", "provider": "ashby", "url": "https://jobs.ashbyhq.com/cohere" },
+    { "name": "Watershed", "provider": "ashby", "url": "https://jobs.ashbyhq.com/watershed" }
+  ]
+}
