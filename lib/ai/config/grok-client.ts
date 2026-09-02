@@ -129,7 +129,10 @@ export async function generateGrok(
   assertGrokKeysConfigured();
 
   const modelId = opts.model ?? DEFAULT_GROK_MODEL;
-  const profile = GROK_MODELS[modelId] ?? GROK_MODELS[DEFAULT_GROK_MODEL];
+  // DEFAULT_GROK_MODEL is always a valid key of GROK_MODELS, so the fallback
+  // lookup can never actually be undefined at runtime — the `!` just tells
+  // TS that, fixing "'profile' is possibly 'undefined'" without changing behavior.
+  const profile = GROK_MODELS[modelId] ?? GROK_MODELS[DEFAULT_GROK_MODEL]!;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const maxRetries = opts.maxRetries ?? 2;
   const openAiMessages = toOpenAIMessages(messages, opts.systemInstruction);
@@ -243,7 +246,10 @@ export async function* streamGenerateGrok(
   assertGrokKeysConfigured();
 
   const modelId = opts.model ?? DEFAULT_GROK_MODEL;
-  const profile = GROK_MODELS[modelId] ?? GROK_MODELS[DEFAULT_GROK_MODEL];
+  // Same reasoning as in generateGrok above: DEFAULT_GROK_MODEL is always a
+  // valid GROK_MODELS key, so this fallback lookup is never actually
+  // undefined at runtime — the `!` only satisfies the type checker.
+  const profile = GROK_MODELS[modelId] ?? GROK_MODELS[DEFAULT_GROK_MODEL]!;
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const openAiMessages = toOpenAIMessages(messages, opts.systemInstruction);
   const keyOrder = getGrokKeyOrder();
