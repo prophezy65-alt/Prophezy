@@ -337,11 +337,11 @@ function isWebGLAvailable(): boolean {
 /** Swallows any render/context-creation error from the 3D scene so a
  * missing/disabled GPU never crashes the page — it just hides the canvas. */
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
+  override state = { hasError: false };
   static getDerivedStateFromError() {
     return { hasError: true };
   }
-  render() {
+  override render() {
     if (this.state.hasError) return null;
     return this.props.children;
   }
