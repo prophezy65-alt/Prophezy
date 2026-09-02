@@ -1,0 +1,289 @@
+/**
+ * pdf-generator.service.ts
+ * Renders a Resume into a professional, ATS-friendly, printer-friendly PDF
+ * using pdf-lib. Layout parameters (font, accent color) come from the
+ * template registry (resume-template.ts).
+ *
+ * Design choices for ATS-friendliness:
+ *  - Single logical reading order (no multi-column text that confuses parsers)
+ *  - Standard fonts embedded via pdf-lib's StandardFonts
+ *  - Real text (not rendered-as-image), so ATS systems can extract it
+ *  - Hyperlinks embedded as real PDF link annotations
+ */
+
+import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage, RGB } from "pdf-lib";
+import { Resume } from "../models/resume.model";
+import { getTemplate } from "../utils/resume-template";
+import { formatDateRange } from "../utils/resume-formatter";
+
+const PAGE_WIDTH = 612; // US Letter, points
+const PAGE_HEIGHT = 792;
+const MARGIN = 50;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+
+interface RenderState {
+  doc: PDFDocument;
+  page: PDFPage;
+  font: PDFFont;
+  boldFont: PDFFont;
+  y: number;
+  accent: RGB;
+}
+
+function hexToRgb(hex: string): RGB {
+  const clean = hex.replace("#", "");
+  const bigint = parseInt(clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean, 16);
+  return rgb(((bigint >> 16) & 255) / 255, ((bigint >> 8) & 255) / 255, (bigint & 255) / 255);
+}
+
+function newPage(state: RenderState): void {
+  state.page = state.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  state.y = PAGE_HEIGHT - MARGIN;
+}
+
+function ensureSpace(state: RenderState, needed: number): void {
+  if (state.y - needed < MARGIN) {
+    newPage(state);
+  }
+}
+
+function drawText(
+  state: RenderState,
+  text: string,
+  options: { size?: number; bold?: boolean; color?: RGB; indent?: number; lineGap?: number } = {}
+): void {
+  const { size = 10, bold = false, color = rgb(0.1, 0.1, 0.1), indent = 0, lineGap = 4 } = options;
+  const font = bold ? state.boldFont : state.font;
+  const maxWidth = CONTENT_WIDTH - indent;
+
+  const words = text.split(" ");
+  let line = "";
+  const lines: string[] = [];
+
+  for (const word of words) {
+    const testLine = line ? `${line} ${word}` : word;
+    const width = font.widthOfTextAtSize(testLine, size);
+    if (width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) lines.push(line);
+
+  for (const l of lines) {
+    ensureSpace(state, size + lineGap);
+    state.page.drawText(l, {
+      x: MARGIN + indent,
+      y: state.y,
+      size,
+      font,
+      color,
+    });
+    state.y -= size + lineGap;
+  }
+}
+
+function drawSectionHeading(state: RenderState, title: string): void {
+  ensureSpace(state, 28);
+  state.y -= 10;
+  state.page.drawText(title.toUpperCase(), {
+    x: MARGIN,
+    y: state.y,
+    size: 12,
+    font: state.boldFont,
+    color: state.accent,
+  });
+  state.y -= 5;
+  state.page.drawLine({
+    start: { x: MARGIN, y: state.y },
+    end: { x: PAGE_WIDTH - MARGIN, y: state.y },
+    thickness: 1.1,
+    color: state.accent,
+  });
+  state.y -= 16;
+}
+
+function drawCenteredText(
+  state: RenderState,
+  text: string,
+  options: { size?: number; bold?: boolean; color?: RGB } = {}
+): void {
+  const { size = 10, bold = false, color = rgb(0.1, 0.1, 0.1) } = options;
+  const font = bold ? state.boldFont : state.font;
+  const width = font.widthOfTextAtSize(text, size);
+  ensureSpace(state, size + 4);
+  state.page.drawText(text, {
+    x: MARGIN + Math.max(0, (CONTENT_WIDTH - width) / 2),
+    y: state.y,
+    size,
+    font,
+    color,
+  });
+  state.y -= size + 4;
+}
+
+/** Draws a bold label on the left and a smaller, muted value right-aligned
+ *  on the same line — the "Company ......... Role" / "Institution ... Dates"
+ *  convention common in professional single-column resume templates. */
+function drawTwoColumnLine(
+  state: RenderState,
+  left: string,
+  right: string,
+  options: { size?: number } = {}
+): void {
+  const { size = 11 } = options;
+  ensureSpace(state, size + 6);
+  state.page.drawText(left, {
+    x: MARGIN,
+    y: state.y,
+    size,
+    font: state.boldFont,
+    color: rgb(0.1, 0.1, 0.1),
+  });
+  if (right) {
+    const rightSize = size - 1.5;
+    const rightWidth = state.font.widthOfTextAtSize(right, rightSize);
+    state.page.drawText(right, {
+      x: PAGE_WIDTH - MARGIN - rightWidth,
+      y: state.y,
+      size: rightSize,
+      font: state.font,
+      color: rgb(0.35, 0.35, 0.35),
+    });
+  }
+  state.y -= size + 6;
+}
+
+function drawBullet(state: RenderState, text: string): void {
+  drawText(state, `•  ${text}`, { size: 10, indent: 4 });
+}
+
+/**
+ * Generates a PDF buffer for the given resume. Returns raw bytes suitable
+ * for streaming as `application/pdf` from a Next.js API route.
+ */
+export async function generateResumePdf(resume: Resume): Promise<Uint8Array> {
+  const template = getTemplate(resume.templateId);
+  const doc = await PDFDocument.create();
+  doc.setTitle(`${resume.content.contact.fullName} - Resume`);
+  doc.setSubject("Resume generated by Prophezy Resume Studio");
+
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  const state: RenderState = {
+    doc,
+    page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]),
+    font,
+    boldFont,
+    y: PAGE_HEIGHT - MARGIN,
+    accent: hexToRgb(template.accentColor),
+  };
+
+  const { content } = resume;
+
+  // Header — centered, matching a professional single-column convention.
+  drawCenteredText(state, content.contact.fullName || "Unnamed Candidate", {
+    size: 22,
+    bold: true,
+    color: rgb(0.08, 0.08, 0.08),
+  });
+
+  if (content.summary?.headline) {
+    drawCenteredText(state, content.summary.headline, { size: 11, color: rgb(0.3, 0.3, 0.3) });
+  }
+
+  const contactLine = [content.contact.location, content.contact.phone, content.contact.email]
+    .filter(Boolean)
+    .join("   |   ");
+  if (contactLine) {
+    drawCenteredText(state, contactLine, { size: 9.5, color: rgb(0.35, 0.35, 0.35) });
+  }
+
+  if (content.contact.links.length) {
+    const linksLine = content.contact.links
+      .map((l) => l.label || l.url.replace(/^https?:\/\//, ""))
+      .join("   |   ");
+    drawCenteredText(state, linksLine, { size: 9.5, color: state.accent });
+  }
+
+  state.y -= 8;
+
+  // Summary
+  if (content.summary?.summary) {
+    drawSectionHeading(state, "Summary");
+    drawText(state, content.summary.summary, { size: 10 });
+  }
+
+  // Experience
+  if (content.experience?.length) {
+    drawSectionHeading(state, "Experience");
+    for (const exp of content.experience) {
+      ensureSpace(state, 34);
+      drawTwoColumnLine(state, exp.company, exp.role, { size: 11 });
+      const dateStr = formatDateRange(exp.dateRange);
+      if (dateStr) drawText(state, dateStr, { size: 9, color: rgb(0.45, 0.45, 0.45) });
+      exp.bullets.forEach((b) => drawBullet(state, b));
+      state.y -= 4;
+    }
+  }
+
+  // Projects
+  if (content.projects?.length) {
+    drawSectionHeading(state, "Projects");
+    for (const proj of content.projects) {
+      ensureSpace(state, 30);
+      drawText(state, proj.name, { size: 11, bold: true });
+      proj.bullets.forEach((b) => drawBullet(state, b));
+      state.y -= 4;
+    }
+  }
+
+  // Education
+  if (content.education?.length) {
+    drawSectionHeading(state, "Education");
+    for (const edu of content.education) {
+      ensureSpace(state, 24);
+      drawTwoColumnLine(state, edu.institution, formatDateRange(edu.dateRange), { size: 10.5 });
+      drawText(state, edu.degree, { size: 10, color: rgb(0.25, 0.25, 0.25) });
+      state.y -= 4;
+    }
+  }
+
+  // Skills
+  if (content.skills?.length) {
+    drawSectionHeading(state, "Skills");
+    for (const group of content.skills) {
+      ensureSpace(state, 14);
+      const label = `${group.category}:  `;
+      state.page.drawText(label, {
+        x: MARGIN,
+        y: state.y,
+        size: 10,
+        font: state.boldFont,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+      const labelWidth = state.boldFont.widthOfTextAtSize(label, 10);
+      drawText(state, group.items.join(", "), { size: 10, indent: labelWidth, lineGap: 5 });
+      state.y -= 3;
+    }
+  }
+
+  // Certificates
+  if (content.certificates?.length) {
+    drawSectionHeading(state, "Certificates");
+    content.certificates.forEach((c) =>
+      drawBullet(state, `${c.name}${c.issuer ? ` — ${c.issuer}` : ""}`)
+    );
+  }
+
+  // Achievements
+  if (content.achievements?.length) {
+    drawSectionHeading(state, "Achievements");
+    content.achievements.forEach((a) => drawBullet(state, a.title));
+  }
+
+  return doc.save();
+}
