@@ -28,7 +28,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = await createClient();
     const { data } = await supabase
-      .from("blog_posts")
+      .from("blog_posts" as any)
       .select("slug, published_at")
       .eq("status", "published");
 
