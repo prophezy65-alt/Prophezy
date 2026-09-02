@@ -104,7 +104,8 @@ export function ExamPredictorChat({
     }
   }
 
-  const lastAssistantHasContent = messages.length > 0 && messages[messages.length - 1].role === "assistant";
+  const lastMessage = messages[messages.length - 1];
+  const lastAssistantHasContent = messages.length > 0 && lastMessage?.role === "assistant";
 
   return (
     <div className="flex w-full max-w-3xl flex-col rounded-2xl p-5" style={{ background: C.canvas, border: `1px solid ${C.wineRed}` }}>
@@ -146,7 +147,7 @@ export function ExamPredictorChat({
           {QUICK_ACTIONS.map((a) => (
             <button
               key={a.mode}
-              onClick={() => send(messages[messages.length - 1].content, a.mode)}
+              onClick={() => send(lastMessage?.content ?? "", a.mode)}
               className="rounded-lg border px-3 py-1.5 text-xs font-medium"
               style={{ borderColor: C.lightSand, color: C.lightSand }}
             >
