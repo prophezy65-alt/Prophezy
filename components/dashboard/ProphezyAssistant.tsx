@@ -92,7 +92,7 @@ export default function ProphezyAssistant() {
         if (!sessionMarkerConsumed) {
           const marker = buffer.match(/^__SESSION__:([^\n]+)\n/);
           if (marker) {
-            sessionIdRef.current = marker[1];
+            sessionIdRef.current = marker[1] ?? null;
             buffer = buffer.slice(marker[0].length);
             sessionMarkerConsumed = true;
           } else {
