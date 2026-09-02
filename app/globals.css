@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  PROPHEZY DESIGN TOKENS
+  -----------------------
+  Palette (named):
+    Void      — near-black base (dark mode canvas)
+    Surface   — raised panel tone
+    Paper     — light mode canvas (faint blue-white, not pure white)
+    Signal    — primary accent, electric blue — "the AI is thinking / predicting"
+    Pulse     — secondary accent, sky cyan — "achievement / confidence / success"
+    Mist/Ink  — text tones
+
+  Type:
+    Display  — Space Grotesk  (geometric, technical — the "operating system" voice)
+    Body     — Inter          (quiet, legible workhorse)
+    Mono     — JetBrains Mono (scores, stats, code, countdowns)
+
+  Signature element: the "Prophecy Ring" — a radial arc gauge used everywhere a
+  score, confidence level, or prediction is shown (ATS score, viva confidence,
+  novelty estimate, CGPA, resume strength). See components/ui/prophecy-ring.tsx.
+
+  NOTE ON THIS REVISION: the default (Midnight) theme below was shifted from a
+  violet+amber duotone to a black+electric-blue one — cleaner, more monochrome,
+  no purple. This only touches the default `:root`/`.dark` block; the opt-in
+  named presets further down (amoled, carbon, glass, ocean, purple, neon,
+  solar — see Settings > Appearance) are untouched, since those are a user's
+  own explicit choice and "purple" is still one of them on purpose.
+*/
+
+:root {
+  --void: 220 20% 6%;
+  --surface: 220 16% 10%;
+  --surface-raised: 220 14% 14%;
+  --paper: 214 40% 98%;
+
+  --ink: 220 20% 8%;
+  --mist: 218 10% 46%;
+
+  --signal: 217 91% 60%;
+  --signal-soft: 217 91% 60% / 0.12;
+  --pulse: 199 95% 62%;
+  --pulse-soft: 199 95% 62% / 0.14;
+
+  --success: 152 55% 45%;
+  --danger: 356 75% 58%;
+  --border: 220 15% 88%;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+}
+
+.dark {
+  --ink: 210 25% 96%;
+  --mist: 218 10% 68%;
+  --border: 220 15% 18%;
+
+  --background: var(--void);
+  --foreground: var(--ink);
+}
+
+/*
+  Settings > Appearance theme overrides. Each block only overrides the
+  surface/accent tokens (void, surface, surface-raised, signal, pulse) —
+  ink/mist/border/spacing/typography are untouched, so every existing
+  component keeps its current contrast and layout regardless of theme.
+  "Midnight" is intentionally absent here: it *is* the default .dark block
+  above, so selecting it applies no override at all.
+*/
+.dark[data-app-theme="amoled"] {
+  --void: 0 0% 0%;
+  --surface: 0 0% 5%;
+  --surface-raised: 0 0% 9%;
+  --signal: 217 91% 60%;
+  --signal-soft: 217 91% 60% / 0.12;
+  --pulse: 199 95% 62%;
+  --pulse-soft: 199 95% 62% / 0.14;
+}
+.dark[data-app-theme="carbon"] {
+  --void: 220 13% 9%;
+  --surface: 220 13% 14%;
+  --surface-raised: 220 12% 18%;
+  --signal: 199 89% 62%;
+  --signal-soft: 199 89% 62% / 0.12;
+  --pulse: 38 88% 62%;
+  --pulse-soft: 38 88% 62% / 0.14;
+}
+.dark[data-app-theme="glass"] {
+  --void: 235 30% 11%;
+  --surface: 235 28% 18%;
+  --surface-raised: 235 26% 24%;
+  --signal: 249 82% 72%;
+  --signal-soft: 249 82% 72% / 0.16;
+  --pulse: 38 88% 66%;
+  --pulse-soft: 38 88% 66% / 0.18;
+}
+.dark[data-app-theme="ocean"] {
+  --void: 205 45% 8%;
+  --surface: 205 38% 13%;
+  --surface-raised: 205 34% 17%;
+  --signal: 189 85% 58%;
+  --signal-soft: 189 85% 58% / 0.12;
+  --pulse: 38 88% 62%;
+  --pulse-soft: 38 88% 62% / 0.14;
+}
+.dark[data-app-theme="purple"] {
+  --void: 265 40% 8%;
+  --surface: 265 34% 13%;
+  --surface-raised: 265 30% 17%;
+  --signal: 271 82% 68%;
+  --signal-soft: 271 82% 68% / 0.12;
+  --pulse: 320 75% 62%;
+  --pulse-soft: 320 75% 62% / 0.14;
+}
+.dark[data-app-theme="neon"] {
+  --void: 230 30% 6%;
+  --surface: 230 26% 11%;
+  --surface-raised: 230 24% 15%;
+  --signal: 158 90% 55%;
+  --signal-soft: 158 90% 55% / 0.14;
+  --pulse: 320 90% 60%;
+  --pulse-soft: 320 90% 60% / 0.16;
+}
+.dark[data-app-theme="solar"] {
+  --void: 25 30% 8%;
+  --surface: 25 26% 13%;
+  --surface-raised: 25 22% 17%;
+  --signal: 38 92% 58%;
+  --signal-soft: 38 92% 58% / 0.12;
+  --pulse: 12 82% 58%;
+  --pulse-soft: 12 82% 58% / 0.14;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-body), sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Glass surface primitives (used sparingly — see frontend-design notes) ---- */
+
+.glass {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--surface-raised) / 0.72),
+    hsl(var(--surface) / 0.55)
+  );
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid hsl(var(--ink) / 0.08);
+}
+
+.dark .glass {
+  border: 1px solid hsl(0 0% 100% / 0.06);
+}
+
+.glass-panel {
+  @apply glass rounded-2xl shadow-glass;
+}
+
+/* Focus ring — always visible for keyboard users, never suppressed */
+:focus-visible {
+  outline: 2px solid hsl(var(--signal));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
