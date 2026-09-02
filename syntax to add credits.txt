@@ -1,0 +1,7 @@
+select add_credits(
+  (select id from auth.users where email = 'someone@example.com'),
+  100,
+  'admin_adjustment',
+  'system',
+  'Manual credit adjustment via admin'
+);

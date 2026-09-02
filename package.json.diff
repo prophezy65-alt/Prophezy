@@ -1,0 +1,13 @@
+--- a/package.json
++++ b/package.json
+@@ scripts @@
+-    "internships:sync": "tsx --env-file=.env scripts/run-sync.ts sync",
+-    "internships:sync:full": "tsx scripts/run-sync.ts sync --full",
+-    "internships:health": "tsx scripts/run-sync.ts health",
+-    "internships:notify:daily": "tsx scripts/run-sync.ts notify --job=daily",
+-    "internships:notify:deadlines": "tsx scripts/run-sync.ts notify --job=deadlines"
++    "internships:sync": "tsx scripts/run-sync.ts sync",
++    "internships:sync:full": "tsx scripts/run-sync.ts sync --full",
++    "internships:health": "tsx scripts/run-sync.ts health",
++    "internships:notify:daily": "tsx scripts/run-sync.ts notify --job=daily",
++    "internships:notify:deadlines": "tsx scripts/run-sync.ts notify --job=deadlines"
