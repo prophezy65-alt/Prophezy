@@ -19,6 +19,11 @@ const STATIC_ROUTES = [
   "/legal/acceptable-use",
 ];
 
+interface BlogPostRow {
+  slug: string;
+  published_at: string | null;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map((path) => ({
     url: `${SITE_URL}${path}`,
@@ -30,7 +35,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const { data } = await supabase
       .from("blog_posts" as any)
       .select("slug, published_at")
-      .eq("status", "published");
+      .eq("status", "published") as unknown as { data: BlogPostRow[] | null };
 
     const postEntries: MetadataRoute.Sitemap = (data ?? []).map((p) => ({
       url: `${SITE_URL}/blog/${p.slug}`,
