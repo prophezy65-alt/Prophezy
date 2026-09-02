@@ -22,9 +22,13 @@ interface SettingsClientProps {
    * project yet — the UI tells those two cases apart below rather than
    * silently showing zeros. */
   creditSummary: CreditSummary | null;
+  /** Internship application unlock allowance/status for this billing
+   * period. `allowance` is null for plans with no cap (Premium today) —
+   * render that as "Unlimited", never as 0 or a placeholder number. */
+  applicationUnlocks: { allowance: number | null; remaining: number };
 }
 
-export default function SettingsClient({ profile, creditSummary }: SettingsClientProps) {
+export default function SettingsClient({ profile, creditSummary, applicationUnlocks }: SettingsClientProps) {
   return (
     <div
       className="min-h-screen w-full p-5 sm:p-8"
@@ -159,6 +163,22 @@ export default function SettingsClient({ profile, creditSummary }: SettingsClien
               </div>
             </div>
           )}
+        </GlassCard>
+
+        {/* Application Unlocks */}
+        <GlassCard>
+          <SectionHeading title="Application Unlocks" description="Internship applications you can unlock this period." />
+          <div className="grid grid-cols-2 gap-2.5 text-center">
+            <StatBlock label="Remaining" value={applicationUnlocks.remaining} />
+            <div className="rounded-xl border border-[#4A4858]/60 bg-[#3A3846]/70 py-2.5">
+              <p className="text-lg font-semibold" style={{ color: INK }}>
+                {applicationUnlocks.allowance === null ? "Unlimited" : applicationUnlocks.allowance.toLocaleString()}
+              </p>
+              <p className="text-[11px]" style={{ color: MUTED }}>
+                Allowance
+              </p>
+            </div>
+          </div>
         </GlassCard>
       </div>
     </div>
