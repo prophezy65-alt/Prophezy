@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -17,7 +17,7 @@ type PollStatus = "checking" | "paid" | "pending" | "failed" | "cancelled" | "no
  * recorded in payment_orders. If the webhook hasn't landed yet, this page
  * keeps polling for a short window rather than showing a false negative.
  */
-export default function PricingReturnPage() {
+function PricingReturnContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("order_id");
   const [status, setStatus] = useState<PollStatus>("checking");
@@ -138,5 +138,27 @@ export default function PricingReturnPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() opts the subtree into client-side rendering for the
+ * query string, which Next.js requires to be wrapped in a Suspense
+ * boundary during static prerendering (otherwise the build fails with
+ * "useSearchParams() should be wrapped in a suspense boundary" — exactly
+ * what happened before this wrapper was added). The fallback is only ever
+ * visible for a very brief instant while the client bundle hydrates.
+ */
+export default function PricingReturnPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto flex max-w-lg flex-col items-center px-6 py-24 text-center">
+          <p className="text-sm text-white/60">Loading…</p>
+        </div>
+      }
+    >
+      <PricingReturnContent />
+    </Suspense>
   );
 }
