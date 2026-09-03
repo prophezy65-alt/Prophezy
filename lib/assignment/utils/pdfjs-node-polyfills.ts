@@ -19,10 +19,12 @@
 // imports it (pdf-parse, pdf-render.util.ts) — so `globalThis.DOMMatrix`
 // exists before pdfjs's own top-level self-polyfill check runs.
 
+type Matrix6 = [number, number, number, number, number, number];
+
 class DOMMatrixPolyfill {
   a: number; b: number; c: number; d: number; e: number; f: number;
 
-  constructor(init?: number[] | DOMMatrixPolyfill) {
+  constructor(init?: Matrix6 | DOMMatrixPolyfill) {
     if (Array.isArray(init) && init.length === 6) {
       [this.a, this.b, this.c, this.d, this.e, this.f] = init;
     } else if (init instanceof DOMMatrixPolyfill) {
