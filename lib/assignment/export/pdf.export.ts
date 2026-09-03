@@ -105,6 +105,43 @@ export async function exportToPdf(bundle: ExportableAssignment): Promise<Buffer>
   return Buffer.from(bytes);
 }
 
+// pdf-lib's built-in fonts (Helvetica, Courier, etc.) only support WinAnsi
+// encoding — essentially Latin-1. AI-generated solutions routinely contain
+// Greek letters and math symbols (γ, √, °, ×, ≤, →, etc.) from formulas,
+// any one of which throws and kills the whole export the moment it's
+// drawn. Map the common ones to safe ASCII equivalents and strip anything
+// else outside WinAnsi's range, so a single unsupported character never
+// crashes the export — worst case a formula reads slightly less prettily,
+// instead of the export failing entirely.
+const SYMBOL_REPLACEMENTS: Record<string, string> = {
+  "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta", "ε": "epsilon",
+  "θ": "theta", "λ": "lambda", "μ": "mu", "π": "pi", "ρ": "rho",
+  "σ": "sigma", "τ": "tau", "φ": "phi", "ω": "omega", "Δ": "Delta",
+  "Σ": "Sigma", "Ω": "Omega", "Φ": "Phi", "Ψ": "Psi", "Θ": "Theta",
+  "√": "sqrt", "∞": "infinity", "≤": "<=", "≥": ">=", "≠": "!=",
+  "≈": "~=", "×": "x", "÷": "/", "→": "->", "←": "<-", "∂": "d",
+  "∑": "sum", "∫": "integral", "°": " deg", "±": "+/-", "·": "*",
+  "…": "...", "–": "-", "—": "-", "’": "'", "‘": "'", "“": "\"", "”": "\"",
+};
+
+function sanitizeForWinAnsi(text: string): string {
+  let result = "";
+  for (const ch of text) {
+    if (SYMBOL_REPLACEMENTS[ch] !== undefined) {
+      result += SYMBOL_REPLACEMENTS[ch];
+      continue;
+    }
+    const code = ch.codePointAt(0) ?? 0;
+    // WinAnsi covers 0x20-0x7E (basic Latin) and 0xA0-0xFF (Latin-1
+    // supplement); anything outside that range gets dropped rather than
+    // risk pdf-lib throwing on an unmapped glyph.
+    if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff)) {
+      result += ch;
+    }
+  }
+  return result;
+}
+
 interface WriteOptions {
   font: PDFFont;
   size: number;
@@ -131,7 +168,8 @@ class PdfCursor {
   }
 
   writeText(text: string, options: WriteOptions): void {
-    const lines = wrapText(text, options.font, options.size, CONTENT_WIDTH);
+    const safeText = sanitizeForWinAnsi(text);
+    const lines = wrapText(safeText, options.font, options.size, CONTENT_WIDTH);
     const lineHeight = options.size * this.lineHeightMultiplier;
 
     for (const line of lines) {

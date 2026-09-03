@@ -26,7 +26,6 @@
  * key, and rotation/cooldown logic never ran. Now wired in for real.
  */
 
-import { withRetry } from "../utils/retry";
 import { logger } from "../utils/logger";
 import { AIConfigError, AIRequestError, AITimeoutError } from "../utils/errors";
 import type { GeminiModelId } from "./models";
@@ -73,8 +72,10 @@ export interface GenerateOptions {
   responseSchema?: Record<string, unknown>;
   /** Millisecond timeout for the whole request. Default 60_000. */
   timeoutMs?: number;
-  /** Max retry attempts on transient failures, PER KEY. Default 2. */
+  /** No longer used by generate() — key racing (see batchSize) replaced per-key retry. Kept for backward compatibility with existing callers that pass it; harmless no-op here. */
   maxRetries?: number;
+  /** How many keys to try IN PARALLEL per round in generate() (default 4). A batch that fully fails moves to the next batch of keys. Set to 1 for strict one-at-a-time behavior. */
+  batchSize?: number;
   /** Caller-supplied AbortSignal, composed with the internal timeout signal */
   signal?: AbortSignal;
   /** Request id for logging/analytics correlation */
@@ -173,6 +174,108 @@ function isKeyRotationCandidate(err: unknown): boolean {
 /* Non-streaming generation                                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * How many keys to fire AT THE SAME TIME per round, instead of strictly
+ * one-after-another. Sequential rotation is safe but slow when several
+ * keys are degraded at once (Gemini-wide "high demand" periods hit every
+ * key roughly equally, not just one) — with 10+ keys, waiting out each
+ * one's full timeout in turn can add up to well over a minute before ever
+ * reaching a healthy key or falling back to Grok, which is a bad
+ * experience for whoever's waiting on the answer.
+ *
+ * Racing a small batch bounds worst-case latency to (batches × timeoutMs)
+ * instead of (keys × timeoutMs) — with 16 keys and a batch of 4, that's 4
+ * rounds instead of 16. The trade-off: every key in a batch is actually
+ * called, so a batch that ultimately fails costs up to BATCH_SIZE calls
+ * worth of API usage instead of 1. Whichever key in the batch answers
+ * first wins; the rest are aborted immediately (best-effort — this stops
+ * the in-flight request, it does not guarantee Google's API books zero
+ * usage for a call that was already in flight when the abort landed).
+ * Override via opts.batchSize if a caller wants stricter sequential
+ * behavior (batchSize: 1) or more aggressive racing.
+ */
+const DEFAULT_BATCH_SIZE = 4;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Attempts a single key once (no in-place retry — with batched racing, a
+ * different key in the same batch winning is faster than retrying this
+ * one). Returns the result or throws, and always reports success/failure
+ * back to key-manager so cooldowns/preferred-key tracking stay accurate
+ * even for keys that lost the race or were aborted. */
+async function attemptKey(
+  keyState: ReturnType<typeof getKeyOrder>[number],
+  messages: GeminiMessage[],
+  modelId: string,
+  opts: GenerateOptions,
+  timeoutMs: number,
+  externalSignal: AbortSignal | undefined
+): Promise<GenerateResult> {
+  const { signal, clear } = composeSignal(timeoutMs, externalSignal);
+  const start = Date.now();
+  try {
+    const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${keyState.key}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        contents: messages,
+        ...(opts.systemInstruction
+          ? { systemInstruction: { parts: [{ text: opts.systemInstruction }] } }
+          : {}),
+        generationConfig: buildGenerationConfig(opts, modelId),
+      }),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok) {
+      throw new AIRequestError(
+        json?.error?.message ?? `Gemini request failed with status ${res.status}`,
+        res.status,
+        json
+      );
+    }
+
+    const candidate = json.candidates?.[0];
+    const text = extractText(candidate);
+    const usage = json.usageMetadata ?? {};
+
+    logger.info("ai.generate.success", {
+      requestId: opts.requestId,
+      feature: opts.feature ?? null,
+      model: modelId,
+      keyLabel: `key #${keyState.index + 1}`,
+      durationMs: Date.now() - start,
+      promptTokens: usage.promptTokenCount,
+      outputTokens: usage.candidatesTokenCount,
+    });
+
+    return {
+      text,
+      finishReason: candidate?.finishReason ?? null,
+      usage: {
+        promptTokens: usage.promptTokenCount ?? 0,
+        outputTokens: usage.candidatesTokenCount ?? 0,
+        totalTokens: usage.totalTokenCount ?? 0,
+      },
+      raw: json,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new AITimeoutError();
+    }
+    throw err;
+  } finally {
+    clear();
+  }
+}
+
 export async function generate(
   messages: GeminiMessage[],
   opts: GenerateOptions = {}
@@ -180,129 +283,95 @@ export async function generate(
   assertKeysConfigured();
 
   const modelId = opts.model ?? DEFAULT_MODEL;
-  // Deliberately much lower than the old 60_000 default. Your route wraps
-  // the whole extractSyllabus() call in its own ~60s stage timeout shared
-  // across EVERY key attempt combined (ingestion + all rotations) — not
-  // per attempt. With this at 60_000, a single slow/hanging key could burn
-  // the entire outer budget by itself (see the "key #3 ... timed out"
-  // log after two fast quota rejections still hit the 60s stage timeout),
-  // leaving zero time to ever reach a healthy key. Real successful calls
-  // for this feature were observed between ~20s-46s, so 25s will abort
-  // some calls that would have eventually succeeded — that's intentional:
-  // rotating to a fresh, likely-less-loaded key and getting a second ~25s
-  // window is more likely to finish inside the outer budget than staking
-  // everything on one slow key for its full 60s. If your route's stage
-  // timeout is configurable, raising it (e.g. to 90-120s) alongside this
-  // will let genuinely-slow-but-healthy calls complete instead of retrying.
-  const timeoutMs = opts.timeoutMs ?? 25_000;
-  const maxRetries = opts.maxRetries ?? 2;
+  // Shorter than a strictly-sequential design would use, since a hung key
+  // no longer stalls the whole request by itself — its batch-mates are
+  // already racing in parallel, so failing fast and moving to the next
+  // batch beats waiting out a long timeout on a possibly-dead key.
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
 
   const keyOrder = getKeyOrder();
+  const batches = chunk(keyOrder, batchSize);
   let lastErr: unknown;
+  let keysTriedSoFar = 0;
 
-  for (const keyState of keyOrder) {
-    try {
-      const result = await withRetry(
-        async () => {
-          const { signal, clear } = composeSignal(timeoutMs, opts.signal);
-          const start = Date.now();
-          try {
-            const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${keyState.key}`;
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal,
-              body: JSON.stringify({
-                contents: messages,
-                ...(opts.systemInstruction
-                  ? { systemInstruction: { parts: [{ text: opts.systemInstruction }] } }
-                  : {}),
-                generationConfig: buildGenerationConfig(opts, modelId),
-              }),
-            });
+  for (const batch of batches) {
+    const controllers = batch.map(() => new AbortController());
 
-            const json = await res.json();
+    const attempts = batch.map((keyState, i) =>
+      attemptKey(keyState, messages, modelId, opts, timeoutMs, controllers[i]!.signal)
+        .then((result) => ({ ok: true as const, keyState, result }))
+        .catch((err) => ({ ok: false as const, keyState, err }))
+    );
 
-            if (!res.ok) {
-              throw new AIRequestError(
-                json?.error?.message ?? `Gemini request failed with status ${res.status}`,
-                res.status,
-                json
-              );
-            }
+    logger.info("ai.generate.batch_race", {
+      requestId: opts.requestId,
+      feature: opts.feature ?? null,
+      model: modelId,
+      batchKeyLabels: batch.map((k) => `key #${k.index + 1}`),
+    });
 
-            const candidate = json.candidates?.[0];
-            const text = extractText(candidate);
-            const usage = json.usageMetadata ?? {};
+    // eslint-disable-next-line no-await-in-loop -- batches must run in
+    // sequence (each batch only starts once the previous one is known to
+    // have fully failed); it's the KEYS WITHIN a batch that run in
+    // parallel, via the Promise.all above.
+    const settled = await Promise.all(attempts);
 
-            logger.info("ai.generate.success", {
-              requestId: opts.requestId,
-              feature: opts.feature ?? null,
-              model: modelId,
-              keyLabel: `key #${keyState.index + 1}`,
-              durationMs: Date.now() - start,
-              promptTokens: usage.promptTokenCount,
-              outputTokens: usage.candidatesTokenCount,
-            });
+    const winner = settled.find((s) => s.ok);
+    if (winner && winner.ok) {
+      // Stop every other in-flight call in this batch immediately — we
+      // already have an answer, no reason to let the rest keep running.
+      controllers.forEach((c) => c.abort());
+      reportKeySuccess(winner.keyState.index);
+      return winner.result;
+    }
 
-            return {
-              text,
-              finishReason: candidate?.finishReason ?? null,
-              usage: {
-                promptTokens: usage.promptTokenCount ?? 0,
-                outputTokens: usage.candidatesTokenCount ?? 0,
-                totalTokens: usage.totalTokenCount ?? 0,
-              },
-              raw: json,
-            };
-          } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
-              throw new AITimeoutError();
-            }
-            throw err;
-          } finally {
-            clear();
-          }
-        },
-        {
-          maxRetries,
-          onRetry: (attempt, err) =>
-            logger.warn("ai.generate.retry", {
-              requestId: opts.requestId,
-              feature: opts.feature ?? null,
-              model: modelId,
-              keyLabel: `key #${keyState.index + 1}`,
-              attempt,
-              error: err instanceof Error ? err.message : String(err),
-            }),
-        }
-      );
+    // Whole batch failed — report each key's failure for cooldown
+    // tracking, same as the old sequential path did per-key.
+    let batchFailureCount = 0;
+    let batchQuotaFailureCount = 0;
+    for (const outcome of settled) {
+      keysTriedSoFar++;
+      if (outcome.ok) continue;
+      lastErr = outcome.err;
+      batchFailureCount++;
 
-      // Full success on this key — cache it as preferred for future calls
-      // and stop trying further keys.
-      reportKeySuccess(keyState.index);
-      return result;
-    } catch (err) {
-      lastErr = err;
-
-      if (!isKeyRotationCandidate(err)) {
+      if (!isKeyRotationCandidate(outcome.err)) {
         // Not a key-specific problem (e.g. a bug in our own request
-        // construction) — retrying with a different key won't help and
-        // would just mask the real error. Fail fast.
-        throw err;
+        // construction) — every other key would fail identically, and
+        // racing them would just waste calls. Fail fast.
+        throw outcome.err;
       }
 
-      const kind = reportKeyFailure(keyState.index, err);
+      const kind = reportKeyFailure(outcome.keyState.index, outcome.err);
+      if (kind === "quota") batchQuotaFailureCount++;
       logger.warn("ai.generate.key_rotation", {
         requestId: opts.requestId,
         feature: opts.feature ?? null,
         model: modelId,
-        exhaustedKeyLabel: `key #${keyState.index + 1}`,
+        exhaustedKeyLabel: `key #${outcome.keyState.index + 1}`,
         reason: kind,
-        keysRemaining: keyOrder.length - (keyOrder.indexOf(keyState) + 1),
+        keysRemaining: keyOrder.length - keysTriedSoFar,
       });
-      // fall through to the next key in keyOrder
     }
+
+    // If EVERY key in this batch failed specifically on quota (not a mix
+    // of transient/server errors), the remaining un-tried keys are very
+    // likely sharing the same project-level quota ceiling and will fail
+    // the same way — burning another 1-3 rounds finding that out again is
+    // pure wasted latency. Skip straight to Grok instead of grinding
+    // through every remaining batch first.
+    if (batchFailureCount > 0 && batchQuotaFailureCount === batchFailureCount) {
+      logger.warn("ai.generate.quota_exhaustion_detected_skipping_remaining_batches", {
+        requestId: opts.requestId,
+        feature: opts.feature ?? null,
+        model: modelId,
+        keysTried: keysTriedSoFar,
+        keysSkipped: keyOrder.length - keysTriedSoFar,
+      });
+      break;
+    }
+    // fall through to the next batch
   }
 
   logger.error("ai.generate.all_keys_exhausted", {
