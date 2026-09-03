@@ -210,7 +210,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 async function attemptKey(
   keyState: ReturnType<typeof getKeyOrder>[number],
   messages: GeminiMessage[],
-  modelId: string,
+  modelId: GeminiModelId,
   opts: GenerateOptions,
   timeoutMs: number,
   externalSignal: AbortSignal | undefined
