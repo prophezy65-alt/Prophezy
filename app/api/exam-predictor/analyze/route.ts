@@ -1,3 +1,5 @@
+import "@/lib/polyfills/pdf-node-polyfill";
+
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/assignment-db/auth";
 import { extractSyllabus } from "@/lib/syllabus/services/syllabus-extraction.service";
