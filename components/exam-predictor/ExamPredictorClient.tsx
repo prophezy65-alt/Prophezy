@@ -18,10 +18,14 @@ interface AnalyzeResponse {
   warnings: string[];
 }
 
-// Client-side ceiling. The server has its own per-stage 60s timeouts, but if
-// something upstream of Next.js (proxy, browser extension, etc.) swallows the
-// response entirely, this guarantees the spinner never runs forever.
-const CLIENT_TIMEOUT_MS = 100_000;
+// Client-side ceiling. The server has its own per-stage timeouts (syllabus
+// extraction up to 110s, prediction/PYQ mapping up to 100s each, run in
+// parallel) within its maxDuration=180 budget, so this needs enough room to
+// not cut off a request the server is still legitimately working on. If
+// something upstream of Next.js (proxy, browser extension, etc.) swallows
+// the response entirely, this still guarantees the spinner doesn't run
+// forever — it just won't fire before the server's own budget does.
+const CLIENT_TIMEOUT_MS = 170_000;
 
 export default function ExamPredictorClient() {
   const [orbState, setOrbState] = useState<OrbState>("idle");
@@ -84,7 +88,7 @@ export default function ExamPredictorClient() {
       clearTimeout(timeoutId);
       const message =
         err instanceof DOMException && err.name === "AbortError"
-          ? "This is taking much longer than expected (>100s) and was cancelled. Try again, or with a smaller file."
+          ? "This is taking much longer than expected (>170s) and was cancelled. Try again, or with a smaller file."
           : err instanceof Error
             ? err.message
             : "Something went wrong.";

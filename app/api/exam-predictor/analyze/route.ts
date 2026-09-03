@@ -178,10 +178,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // of back-to-back. This halves the wall-clock cost of this part of the
     // request whenever previous papers are supplied, without changing what
     // either stage computes.
+    //
+    // Prediction was hitting the generic 60s STAGE_TIMEOUT_MS in practice
+    // (same root cause as syllabus extraction above — key rotation across
+    // 2-4 keys can itself approach 60s before ever reaching a healthy one).
+    // Give it the same kind of dedicated, longer budget. maxDuration=180
+    // still comfortably covers extraction (up to 110s) + this stage
+    // running in parallel with PYQ mapping (up to 60s) after it.
+    const PREDICTION_TIMEOUT_MS = 100_000;
     const [prediction, pyqMap] = await Promise.all([
-      withTimeout(predictPaper(user.id, syllabus, previousYearQuestionsText, questionCount), "Prediction"),
+      withTimeout(predictPaper(user.id, syllabus, previousYearQuestionsText, questionCount), "Prediction", PREDICTION_TIMEOUT_MS),
       previousYearQuestionsText
-        ? withTimeout(mapPreviousYearQuestions(user.id, syllabus, previousYearQuestionsText), "PYQ mapping")
+        ? withTimeout(mapPreviousYearQuestions(user.id, syllabus, previousYearQuestionsText), "PYQ mapping", PREDICTION_TIMEOUT_MS)
         : Promise.resolve(null),
     ]);
     log("prediction done", { questions: prediction.expectedQuestions.length });
