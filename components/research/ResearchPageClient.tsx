@@ -90,7 +90,7 @@ export function ResearchPageClient() {
           unchanged from before. */}
       <ResearchHero />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         <div>
           <div className="mb-6 flex items-center">
             <div className="flex gap-1 rounded-xl bg-surface p-1">
@@ -118,7 +118,7 @@ export function ResearchPageClient() {
             <p className="text-xs font-medium uppercase tracking-wide text-mist">Details</p>
           </div>
 
-          <div className="h-[calc(100vh-220px)] min-h-[400px]">
+          <div className="h-[calc(100vh-320px)] min-h-[320px]">
             {chatOpenFor ? (
               <ChatPanel paperId={chatOpenFor} onClose={() => setChatOpenFor(null)} />
             ) : selectedPaperId ? (
