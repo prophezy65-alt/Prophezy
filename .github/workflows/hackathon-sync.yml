@@ -52,7 +52,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # @supabase/supabase-js (^2.110.5) requires the native WebSocket
+          # global for its realtime module, which only became stable in
+          # Node 22 — createClient() throws "native WebSocket not found" on
+          # Node 20, which is what was actually crashing this workflow.
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
