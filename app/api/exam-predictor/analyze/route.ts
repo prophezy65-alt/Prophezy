@@ -123,9 +123,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const paperWarnings: string[] = [];
     let previousYearQuestionsText: string | undefined;
     if (previousPapers.length > 0) {
-      const chunks: string[] = [];
-      for (const file of previousPapers) {
-        try {
+      // Read/ingest every previous paper CONCURRENTLY instead of one at a
+      // time — each file's ingestSyllabus() call is independent (no file
+      // needs another file's result), so awaiting them sequentially in a
+      // for-loop was just adding up N files' worth of wait time for no
+      // reason. Promise.allSettled preserves per-file error handling
+      // exactly as before and keeps output order (chunks stay in the same
+      // order the files were uploaded, matching the old loop's behavior).
+      const results = await Promise.allSettled(
+        previousPapers.map(async (file) => {
           const format = detectSyllabusFormat(file);
           const ingested = await withTimeout(
             ingestSyllabus(user.id, {
@@ -136,13 +142,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             }),
             `Reading ${file.name}`
           );
+          return { file, ingested };
+        })
+      );
+
+      const chunks: string[] = [];
+      results.forEach((result, i) => {
+        const file = previousPapers[i];
+        if (result.status === "fulfilled") {
+          const { ingested } = result.value;
           chunks.push(`--- ${file.name} ---\n${ingested.rawText}`);
           paperWarnings.push(...ingested.warnings);
           log("paper ingested", { fileName: file.name });
-        } catch (err) {
+        } else {
+          const err = result.reason;
           if (err instanceof UnsupportedExamPredictorFileError) {
             paperWarnings.push(err.message);
-            continue;
+            return;
           }
           log("paper ingest failed", { fileName: file.name, err: err instanceof Error ? err.message : String(err) });
           paperWarnings.push(
@@ -151,18 +167,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               : `Couldn't read "${file.name}" — it was skipped.`
           );
         }
-      }
+      });
       previousYearQuestionsText = chunks.length > 0 ? chunks.join("\n\n") : undefined;
     }
 
-    // 3. Predict (existing lib/syllabus service — same Gemini abstraction).
-    const prediction = await withTimeout(predictPaper(user.id, syllabus, previousYearQuestionsText, questionCount), "Prediction");
+    // 3 & 4. Predict, and map PYQ coverage — these two stages are
+    // independent (PYQ mapping only needs the syllabus + previous-paper
+    // text, not the prediction output), so run them CONCURRENTLY instead
+    // of back-to-back. This halves the wall-clock cost of this part of the
+    // request whenever previous papers are supplied, without changing what
+    // either stage computes.
+    const [prediction, pyqMap] = await Promise.all([
+      withTimeout(predictPaper(user.id, syllabus, previousYearQuestionsText, questionCount), "Prediction"),
+      previousYearQuestionsText
+        ? withTimeout(mapPreviousYearQuestions(user.id, syllabus, previousYearQuestionsText), "PYQ mapping")
+        : Promise.resolve(null),
+    ]);
     log("prediction done", { questions: prediction.expectedQuestions.length });
-
-    // 4. PYQ coverage map only makes sense once we actually have previous papers.
-    const pyqMap = previousYearQuestionsText
-      ? await withTimeout(mapPreviousYearQuestions(user.id, syllabus, previousYearQuestionsText), "PYQ mapping")
-      : null;
     log("done");
 
     const previousPapersUsedCount = previousPapers.length - paperWarnings.filter((w) => w.includes("skipped")).length;
