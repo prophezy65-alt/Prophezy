@@ -33,8 +33,28 @@ const nextConfig: NextConfig = {
   // DOMMatrix is not defined" the moment a PDF is uploaded, even though it
   // builds and works fine locally. Explicitly including the whole package
   // directory for every API route sidesteps that gap.
+  //
+  // pdf.worker.mjs is included for the same reason as the canvas native
+  // binaries above: pdfjs-dist's Node ("legacy") build loads its worker
+  // script via `await import(this.workerSrc)` at RUNTIME rather than a
+  // static top-level import, so the build-time file tracer can't see the
+  // reference and silently drops the file from the deployed bundle —
+  // producing "Cannot find module '.../pdfjs-dist/legacy/build/pdf.worker.mjs'"
+  // the first time a PDF is processed in production, even though it works
+  // locally. Both glob entries below are needed: npm sometimes dedupes
+  // pdfjs-dist to the top-level node_modules/pdfjs-dist, and sometimes
+  // (when pdf-parse's required version can't be deduped) installs a
+  // private copy at node_modules/pdf-parse/node_modules/pdfjs-dist instead
+  // — which is the exact path this error was thrown from. Including both
+  // covers it regardless of how npm happened to resolve it on a given
+  // install/lockfile.
   outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/@napi-rs/canvas/**/*", "./node_modules/canvas/**/*"],
+    "/api/**/*": [
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/canvas/**/*",
+      "./node_modules/pdfjs-dist/**/*.mjs",
+      "./node_modules/pdf-parse/node_modules/pdfjs-dist/**/*.mjs",
+    ],
   },
 };
 
