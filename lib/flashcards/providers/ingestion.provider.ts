@@ -18,7 +18,6 @@
  * are fetched via upload-fetch.provider.ts (new, local to this module).
  */
 
-import { documentService } from "@/lib/document";
 import type { FileFormat } from "@/lib/document";
 import { sanitizeIngestedText } from "../validation/sanitize";
 import { runOcr } from "./ocr.provider";
@@ -62,6 +61,16 @@ async function extractViaDocumentEngine(sourceType: SourceType, uploadId: string
   }
 
   const { buffer, mimeType, filename } = await fetchUploadBuffer(uploadId, userId);
+
+  // FIX: this was a static top-level import of "@/lib/document", which pulls in
+  // a PDF-parsing library that references DOMMatrix (a browser-only API) at
+  // module load time. Because decks/route.ts statically imports this whole file
+  // (via lib/flashcards's index -> generator.service -> here), EVERY request to
+  // /api/flashcards/decks — including a plain GET that never touches a PDF —
+  // was crashing the entire module with "ReferenceError: DOMMatrix is not
+  // defined" before the handler even ran. Loading it lazily, only when a file
+  // actually needs extraction, keeps that cost out of routes that don't need it.
+  const { documentService } = await import("@/lib/document");
 
   const doc = await documentService.process({
     userId,
