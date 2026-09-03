@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getMonthlyApplicationUnlockAllowance } from "@/lib/credits";
 import type { Plan } from "@/lib/credits";
+import { isPayablePlan } from "@/lib/payments/plans";
+import CheckoutButton from "@/components/payments/CheckoutButton";
 
 export const metadata: Metadata = {
   title: "Pricing — Prophezy",
@@ -12,17 +14,18 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * Phase 5 — the pricing page did not exist before this. Built to the same
- * rule as everything else in the entitlement layer: NOTHING here is
- * hardcoded. Price, monthly credits, and the internship unlock allowance
- * are all read live from public.plans (RLS: plans_select_all, public read)
- * via the SAME lib/credits helpers the rest of the app uses to resolve
- * entitlements — so if the DB values ever change, this page changes with
- * them automatically instead of drifting out of sync.
+ * Phase 6 — payment integration wired up (Cashfree). Price, monthly
+ * credits, and the internship unlock allowance are still read live from
+ * public.plans (RLS: plans_select_all, public read) via the SAME
+ * lib/credits helpers the rest of the app uses to resolve entitlements —
+ * this page does not hardcode any of those numbers.
  *
- * No payment integration here (Cashfree/Razorpay are explicitly out of
- * scope for this task) — this is presentation only. CTAs are inert until
- * that's wired up.
+ * The Free plan CTA stays inert (there is nothing to pay for). Pro and
+ * Premium CTAs are the CheckoutButton client component, which only ever
+ * sends `planTier` to the server — the server (lib/payments/plans.ts)
+ * decides the amount. Whether a plan is currently reachable for checkout
+ * is INDEPENDENT of anything hardcoded here: isPayablePlan() is the same
+ * guard the API route itself enforces.
  */
 export default async function PricingPage() {
   // lib/supabase/types.ts (the generated Database type) predates the
@@ -73,6 +76,10 @@ export default async function PricingPage() {
         <section className="grid gap-6 sm:grid-cols-3">
           {plans.map((plan) => {
             const unlockAllowance = getMonthlyApplicationUnlockAllowance(plan);
+            const buttonClass =
+              "w-full rounded-lg border border-white/[0.12] px-4 py-2 text-sm text-white transition hover:bg-white/[0.06]";
+            const disabledClass = "w-full rounded-lg border border-white/[0.12] px-4 py-2 text-sm text-white/50";
+
             return (
               <div key={plan.id} className="flex flex-col rounded-xl border border-white/[0.08] p-6">
                 <h2 className="text-sm uppercase tracking-[0.12em] text-white/40" style={{ fontFamily: "var(--font-mono)" }}>
@@ -92,14 +99,24 @@ export default async function PricingPage() {
                       : `${unlockAllowance} internship application unlocks/month`}
                   </li>
                 </ul>
-                <button
-                  type="button"
-                  disabled
-                  className="w-full rounded-lg border border-white/[0.12] px-4 py-2 text-sm text-white/50"
-                  title="Payment integration is coming soon."
-                >
-                  {plan.priceInr === 0 ? "Current default plan" : "Coming soon"}
-                </button>
+
+                {isPayablePlan(plan.id) ? (
+                  <CheckoutButton
+                    planTier={plan.id}
+                    label={`Upgrade to ${plan.name}`}
+                    className={buttonClass}
+                    disabledClassName={disabledClass}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className={disabledClass}
+                    title="This is your current default plan."
+                  >
+                    Current default plan
+                  </button>
+                )}
               </div>
             );
           })}
