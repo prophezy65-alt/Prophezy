@@ -47,11 +47,34 @@ export interface GrokGenerateOptions {
   maxOutputTokens?: number;
   topP?: number;
   jsonMode?: boolean;
+  /** JSON schema the output should conform to (only used if jsonMode). Groq/Grok's
+   *  chat-completions API has no native responseSchema field, so this is enforced
+   *  by injecting it into the system instruction (see buildSchemaInstruction below)
+   *  rather than sent as a request parameter. */
+  responseSchema?: Record<string, unknown>;
   timeoutMs?: number;
   maxRetries?: number;
   signal?: AbortSignal;
   requestId?: string;
   feature?: string;
+}
+
+/**
+ * Grok/Groq has no responseSchema request field (unlike Gemini), so the only
+ * reliable way to make it fill every required key is to spell the shape out
+ * as an explicit system-level instruction on top of jsonMode's loose
+ * { type: "json_object" } request. Without this, jsonMode only guarantees
+ * "valid JSON", not "JSON with the fields the validator requires" — which is
+ * exactly what was producing schema-validation failures on every Grok
+ * fallback (e.g. notes generation returning only `{ title: "..." }`).
+ */
+function buildSchemaInstruction(responseSchema: Record<string, unknown>): string {
+  return (
+    "You must respond with ONLY a single valid JSON object (no prose, no markdown fences) " +
+    "that strictly conforms to this JSON Schema — every property it requires must be present " +
+    "and correctly typed:\n\n" +
+    JSON.stringify(responseSchema)
+  );
 }
 
 type OpenAIChatMessage = {
@@ -132,7 +155,15 @@ export async function generateGrok(
   const profile = GROK_MODELS[modelId] ?? GROK_MODELS[DEFAULT_GROK_MODEL]!;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const maxRetries = opts.maxRetries ?? 2;
-  const openAiMessages = toOpenAIMessages(messages, opts.systemInstruction);
+  // When a responseSchema is supplied, fold it into the system instruction
+  // BEFORE building the message list, so it's actually sent to the model —
+  // this is the fix: previously responseSchema was accepted by nothing and
+  // silently dropped on every Grok fallback call.
+  const effectiveSystemInstruction =
+    opts.jsonMode && opts.responseSchema
+      ? [opts.systemInstruction, buildSchemaInstruction(opts.responseSchema)].filter(Boolean).join("\n\n")
+      : opts.systemInstruction;
+  const openAiMessages = toOpenAIMessages(messages, effectiveSystemInstruction);
 
   const keyOrder = getGrokKeyOrder();
   let lastErr: unknown;

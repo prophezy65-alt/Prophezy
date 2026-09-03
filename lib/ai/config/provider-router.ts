@@ -151,6 +151,12 @@ export async function generateWithFallback(
         temperature: opts.temperature,
         maxOutputTokens: opts.maxOutputTokens,
         jsonMode: opts.jsonMode,
+        // FIX: responseSchema was accepted by generateGemini but never
+        // forwarded to the Grok fallback call — every other option was
+        // passed through except this one, so any Grok fallback for a
+        // structured feature (notes, resume, quiz, etc.) had no idea which
+        // fields were required and could return minimal/incomplete JSON.
+        responseSchema: opts.responseSchema,
         timeoutMs: opts.timeoutMs,
         signal: opts.signal,
         requestId: opts.requestId,
