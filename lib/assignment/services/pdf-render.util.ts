@@ -3,31 +3,18 @@
 // be fed into the OCR pipeline (Tesseract + vision fallback), which both
 // operate on raster images, not PDF structure.
 //
-// Peer dependencies:
-//   npm install pdfjs-dist canvas
+// Peer dependency:
+//   npm install canvas
 //
 // pdfjs-dist does the PDF parsing/rendering to a canvas surface; the `canvas`
 // package provides the Node-side CanvasRenderingContext2D implementation
 // (native binding, prebuilt binaries available for standard Node runtimes).
-
+//
+// IMPORTANT: the polyfill import below must stay FIRST, before the
+// pdfjs-dist import — see pdfjs-node-polyfills.ts for why.
+import "../utils/pdfjs-node-polyfills";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { createCanvas, DOMMatrix, ImageData } from "canvas";
-
-// pdfjs-dist's "legacy" Node build still assumes a couple of browser globals
-// exist (DOMMatrix, ImageData) for its rendering pipeline. Next.js's local
-// dev server happens to have these available somewhere else in the module
-// graph, but Vercel's serverless function bundle does not, which surfaces as
-// `ReferenceError: DOMMatrix is not defined` in production only. The
-// `canvas` package (already a dependency here) ships Node-compatible
-// implementations of both — register them as globals, once, before any
-// pdfjs rendering call runs. Guarded so this is a no-op anywhere they're
-// already defined (e.g. if a future runtime provides them natively).
-if (typeof globalThis.DOMMatrix === "undefined") {
-  (globalThis as unknown as { DOMMatrix: unknown }).DOMMatrix = DOMMatrix;
-}
-if (typeof globalThis.ImageData === "undefined") {
-  (globalThis as unknown as { ImageData: unknown }).ImageData = ImageData;
-}
+import { createCanvas } from "canvas";
 
 export interface RasterizedPage {
   pageNumber: number;

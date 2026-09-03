@@ -1,3 +1,8 @@
+// IMPORTANT: must stay the first import in this file — see
+// lib/assignment/utils/pdfjs-node-polyfills.ts for why. This guarantees the
+// polyfill runs before anything else in this route's module graph (directly
+// or transitively) gets a chance to load pdfjs-dist.
+import "@/lib/assignment/utils/pdfjs-node-polyfills";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createClient } from "@/lib/supabase/server";

@@ -22,6 +22,10 @@
 // inside the constructor (it reads `options.verbosity` to fill in a
 // default logging level), and `.parse` doesn't exist on the class at all.
 
+// IMPORTANT: must stay first — see pdfjs-node-polyfills.ts. pdf-parse
+// bundles its own separate pdfjs-dist internally, which needs the same
+// polyfill applied before it loads.
+import "../utils/pdfjs-node-polyfills";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 
