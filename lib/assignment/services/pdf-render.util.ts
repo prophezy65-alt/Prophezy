@@ -11,7 +11,23 @@
 // (native binding, prebuilt binaries available for standard Node runtimes).
 
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { createCanvas } from "canvas";
+import { createCanvas, DOMMatrix, ImageData } from "canvas";
+
+// pdfjs-dist's "legacy" Node build still assumes a couple of browser globals
+// exist (DOMMatrix, ImageData) for its rendering pipeline. Next.js's local
+// dev server happens to have these available somewhere else in the module
+// graph, but Vercel's serverless function bundle does not, which surfaces as
+// `ReferenceError: DOMMatrix is not defined` in production only. The
+// `canvas` package (already a dependency here) ships Node-compatible
+// implementations of both — register them as globals, once, before any
+// pdfjs rendering call runs. Guarded so this is a no-op anywhere they're
+// already defined (e.g. if a future runtime provides them natively).
+if (typeof globalThis.DOMMatrix === "undefined") {
+  (globalThis as unknown as { DOMMatrix: unknown }).DOMMatrix = DOMMatrix;
+}
+if (typeof globalThis.ImageData === "undefined") {
+  (globalThis as unknown as { ImageData: unknown }).ImageData = ImageData;
+}
 
 export interface RasterizedPage {
   pageNumber: number;
