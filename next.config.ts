@@ -19,21 +19,22 @@ const nextConfig: NextConfig = {
   // "Object.defineProperty called on non-object" error seen when uploading
   // a PDF for quiz generation. This tells Next.js to require() them
   // directly at runtime instead of bundling them through webpack.
-  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "pdfjs-dist"],
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "pdfjs-dist", "canvas"],
   // serverExternalPackages above only stops webpack from BUNDLING these —
   // it doesn't guarantee Vercel's separate file-tracing step (which
   // decides what actually ships inside each deployed serverless function)
-  // picks up @napi-rs/canvas's compiled native .node binary, since it's
-  // require()'d dynamically deep inside pdfjs-dist's legacy Node build
-  // rather than via a static import the tracer can follow. Without this,
-  // the function deploys successfully but the native binary is missing at
-  // runtime — surfacing as "Cannot find module '@napi-rs/canvas'" followed
-  // by "ReferenceError: DOMMatrix is not defined" the moment a PDF is
-  // uploaded, even though it builds and works fine locally. Explicitly
-  // including the whole package directory for every API route sidesteps
-  // that gap.
+  // picks up @napi-rs/canvas's and canvas's compiled native .node binaries,
+  // since they're require()'d dynamically (canvas from
+  // lib/assignment/services/pdf-render.util.ts, @napi-rs/canvas deep
+  // inside pdfjs-dist's legacy Node build) rather than via a static import
+  // the tracer can follow. Without this, the function deploys successfully
+  // but the native binary is missing at runtime — surfacing as
+  // "Cannot find module '@napi-rs/canvas'" followed by "ReferenceError:
+  // DOMMatrix is not defined" the moment a PDF is uploaded, even though it
+  // builds and works fine locally. Explicitly including the whole package
+  // directory for every API route sidesteps that gap.
   outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/@napi-rs/canvas/**/*"],
+    "/api/**/*": ["./node_modules/@napi-rs/canvas/**/*", "./node_modules/canvas/**/*"],
   },
 };
 
