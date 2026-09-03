@@ -133,6 +133,14 @@ export const FEATURE_MODEL_MAP: Record<string, GeminiModelId> = {
   mindmap: "gemini-3.6-flash",
   humanizer: "gemini-3.6-flash",
   ocr: "gemini-3.6-flash",
+  // Exam Predictor: moved to Flash-Lite for speed, same trade-off already
+  // accepted for quiz/flashcards (faster responses, slightly less capable
+  // than the default gemini-3.6-flash on strict JSON extraction). If
+  // syllabus-extraction accuracy regresses noticeably, "syllabus.extraction"
+  // is the one most worth moving back to gemini-3.6-flash first.
+  "syllabus.extraction": "gemini-3.5-flash-lite",
+  "syllabus.paper-predictor": "gemini-3.5-flash-lite",
+  "syllabus.pyq-mapper": "gemini-3.5-flash-lite",
 };
 
 export function resolveModelForFeature(feature: string): ModelProfile {
