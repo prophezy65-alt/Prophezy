@@ -3,11 +3,13 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import SectionHeading from "../SectionHeading";
+import CheckoutButton from "@/components/payments/CheckoutButton";
 
 const ACCENT = "#5ff2ff";
 
 const TIERS = [
   {
+    id: "free" as const,
     name: "Free",
     price: "₹0",
     period: "forever",
@@ -32,6 +34,7 @@ const TIERS = [
     ],
   },
   {
+    id: "pro" as const,
     name: "Pro",
     price: "₹75",
     period: "/ month",
@@ -57,6 +60,7 @@ const TIERS = [
     ],
   },
   {
+    id: "premium" as const,
     name: "Premium",
     price: "₹100",
     period: "/ month",
@@ -85,6 +89,18 @@ const TIERS = [
   },
 ];
 
+/**
+ * Homepage marketing "Get started" buttons for Pro/Premium now go straight
+ * into Cashfree Web Checkout (which itself offers UPI/QR, cards, netbanking
+ * — Cashfree's hosted page, not something built here) instead of /signup.
+ * Free stays a plain link to /signup since there's nothing to pay for.
+ *
+ * Checkout -> Cashfree hosted payment page -> Cashfree redirects back to
+ * /pricing/return, which polls the server-verified order status and
+ * auto-redirects into the dashboard (/app) once the webhook has confirmed
+ * payment. Nothing here grants a plan/credits itself — see
+ * lib/payments/payment.service.ts + the Cashfree webhook handler.
+ */
 export default function Pricing() {
   return (
     <section id="pricing" className="relative border-t border-white/[0.06] px-6 py-28 sm:py-36">
@@ -144,15 +160,25 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-              <Link
-                href="/signup"
-                className={`inline-flex items-center justify-center rounded-full py-3 text-sm font-medium transition-transform hover:-translate-y-0.5 ${
-                  tier.highlight ? "text-[#050505]" : "border border-white/15 text-white"
-                }`}
-                style={tier.highlight ? { backgroundColor: ACCENT } : undefined}
-              >
-                Get started
-              </Link>
+
+              {tier.id === "free" ? (
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center justify-center rounded-full py-3 text-sm font-medium transition-transform hover:-translate-y-0.5 border border-white/15 text-white"
+                >
+                  Get started
+                </Link>
+              ) : (
+                <CheckoutButton
+                  planTier={tier.id}
+                  label="Get started"
+                  className={`w-full inline-flex items-center justify-center rounded-full py-3 text-sm font-medium transition-transform hover:-translate-y-0.5 ${
+                    tier.highlight ? "text-[#050505]" : "border border-white/15 text-white"
+                  }`}
+                  disabledClassName={`w-full inline-flex items-center justify-center rounded-full py-3 text-sm font-medium border border-white/15 text-white/50`}
+                  style={tier.highlight ? { backgroundColor: ACCENT } : undefined}
+                />
+              )}
             </motion.div>
           ))}
         </div>

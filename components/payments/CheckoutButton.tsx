@@ -40,18 +40,21 @@ interface CheckoutButtonProps {
   label: string;
   className?: string;
   disabledClassName?: string;
+  style?: React.CSSProperties;
 }
 
 /**
- * Drop-in replacement for the disabled "Coming soon" button on the
- * pricing page. Only sends `planTier` to the server — the charged amount
- * is decided server-side (lib/payments/plans.ts), never by this
- * component. On click:
+ * Drop-in checkout trigger used both on the marketing homepage pricing
+ * section and the in-app /pricing page. Only sends `planTier` to the
+ * server — the charged amount is decided server-side
+ * (lib/payments/plans.ts), never by this component. On click:
  *   1. collects a phone number (required by Cashfree, not currently
  *      stored on the profile),
  *   2. POSTs /api/payments/create-order,
  *   3. hands the returned payment_session_id to the Cashfree Web
- *      Checkout SDK, which redirects to Cashfree's hosted payment page.
+ *      Checkout SDK, which redirects to Cashfree's hosted payment page
+ *      (Cashfree's own UI offers UPI/QR, cards, netbanking — nothing
+ *      QR-specific is built here, it's Cashfree's hosted checkout).
  *
  * Credits/plan are NEVER granted from this component or from the
  * redirect back — only the server-verified webhook does that.
@@ -61,6 +64,7 @@ export default function CheckoutButton({
   label,
   className,
   disabledClassName,
+  style,
 }: CheckoutButtonProps) {
   const [phase, setPhase] = useState<"idle" | "collecting-phone" | "loading">("idle");
   const [phone, setPhone] = useState("");
@@ -77,7 +81,8 @@ export default function CheckoutButton({
       });
       const body = await res.json();
       if (res.status === 401) {
-        window.location.href = `/login?redirectTo=${encodeURIComponent("/pricing")}`;
+        const back = typeof window !== "undefined" ? window.location.pathname : "/pricing";
+        window.location.href = `/login?redirectTo=${encodeURIComponent(back)}`;
         return;
       }
       if (!res.ok || !body.ok) {
@@ -122,7 +127,7 @@ export default function CheckoutButton({
           autoFocus
         />
         {error && <p className="text-xs text-red-400">{error}</p>}
-        <button type="submit" className={className}>
+        <button type="submit" className={className} style={style}>
           Continue to payment
         </button>
       </form>
@@ -136,6 +141,7 @@ export default function CheckoutButton({
         disabled={phase === "loading"}
         onClick={() => setPhase("collecting-phone")}
         className={phase === "loading" ? disabledClassName ?? className : className}
+        style={style}
       >
         {phase === "loading" ? "Starting checkout…" : label}
       </button>

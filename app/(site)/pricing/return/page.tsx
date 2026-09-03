@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 type PollStatus = "checking" | "paid" | "pending" | "failed" | "cancelled" | "not_found";
@@ -18,6 +18,7 @@ type PollStatus = "checking" | "paid" | "pending" | "failed" | "cancelled" | "no
  * keeps polling for a short window rather than showing a false negative.
  */
 function PricingReturnContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("order_id");
   const [status, setStatus] = useState<PollStatus>("checking");
@@ -85,6 +86,18 @@ function PricingReturnContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
+  // Auto-redirect into the dashboard a couple of seconds after the
+  // server-verified payment is confirmed — gives the person just enough
+  // time to see the confirmation before landing in /app. This only fires
+  // once `status === "paid"`, which itself only happens after
+  // GET /api/payments/status/:orderId reports `processed: true` from the
+  // webhook-driven payment_orders row — never from anything client-side.
+  useEffect(() => {
+    if (status !== "paid") return;
+    const timer = setTimeout(() => router.push("/app"), 2500);
+    return () => clearTimeout(timer);
+  }, [status, router]);
+
   const copy: Record<PollStatus, { title: string; body: string }> = {
     checking: {
       title: "Confirming your payment…",
@@ -92,7 +105,7 @@ function PricingReturnContent() {
     },
     paid: {
       title: "Payment confirmed",
-      body: "Your plan has been upgraded and your credits are ready to use.",
+      body: "Your plan has been upgraded and your credits are ready to use. Taking you to your dashboard…",
     },
     pending: {
       title: "Still confirming",
