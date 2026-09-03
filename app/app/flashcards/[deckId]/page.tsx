@@ -143,7 +143,6 @@ function DeckDetailContent({ deckId }: { deckId: string }) {
                 e.target.value = "";
               }}
               defaultValue=""
-              style={{ colorScheme: "dark" }}
               className="h-10 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
             >
               <option value="" disabled>
@@ -166,7 +165,6 @@ function DeckDetailContent({ deckId }: { deckId: string }) {
             <select
               value={importFormat}
               onChange={(e) => setImportFormat(e.target.value as ImportFormat)}
-              style={{ colorScheme: "dark" }}
               className="h-10 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
             >
               <option value="csv">CSV (front,back,card_type,difficulty,tags,hint)</option>
