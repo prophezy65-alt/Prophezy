@@ -323,7 +323,7 @@ export default function QuizHubPage() {
           style={{ backgroundColor: ACCENT }}
         >
           {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-          {generating ? "Generating with Gemini…" : "Generate quiz"}
+          {generating ? "Generating…" : "Generate quiz"}
         </button>
       </form>
 
