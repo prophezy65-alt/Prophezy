@@ -143,13 +143,22 @@ function DeckDetailContent({ deckId }: { deckId: string }) {
                 e.target.value = "";
               }}
               defaultValue=""
-              className="h-10 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
+              style={{ backgroundColor: "#000000", colorScheme: "dark" }}
+              className="h-10 rounded-xl border border-white/10 bg-black px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
             >
-              <option value="" disabled>
+              <option value="" disabled style={{ backgroundColor: "#000000", color: "#94a3b8" }}>
                 Export as...
               </option>
               {EXPORT_FORMATS.map((f) => (
-                <option key={f.value} value={f.value} disabled={f.disabled}>
+                <option
+                  key={f.value}
+                  value={f.value}
+                  disabled={f.disabled}
+                  style={{
+                    backgroundColor: "#000000",
+                    color: f.disabled ? "#475569" : "#e2e8f0",
+                  }}
+                >
                   {f.label}
                 </option>
               ))}
@@ -165,11 +174,18 @@ function DeckDetailContent({ deckId }: { deckId: string }) {
             <select
               value={importFormat}
               onChange={(e) => setImportFormat(e.target.value as ImportFormat)}
-              className="h-10 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
+              style={{ backgroundColor: "#000000", colorScheme: "dark" }}
+              className="h-10 w-full rounded-xl border border-white/10 bg-black px-3 text-sm text-slate-300 focus:border-teal-400/40 focus:outline-none"
             >
-              <option value="csv">CSV (front,back,card_type,difficulty,tags,hint)</option>
-              <option value="anki">Anki (tab-separated front/back/tags)</option>
-              <option value="json">JSON</option>
+              <option value="csv" style={{ backgroundColor: "#000000", color: "#e2e8f0" }}>
+                CSV (front,back,card_type,difficulty,tags,hint)
+              </option>
+              <option value="anki" style={{ backgroundColor: "#000000", color: "#e2e8f0" }}>
+                Anki (tab-separated front/back/tags)
+              </option>
+              <option value="json" style={{ backgroundColor: "#000000", color: "#e2e8f0" }}>
+                JSON
+              </option>
             </select>
             <textarea
               value={importContent}
