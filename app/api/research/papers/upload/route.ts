@@ -1,3 +1,5 @@
+import "@/lib/polyfills/pdf-node-polyfill";
+
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { uploadPaper } from "@/lib/research/services/ingest.service";
