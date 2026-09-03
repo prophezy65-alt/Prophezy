@@ -43,15 +43,20 @@ interface CheckoutButtonProps {
   style?: React.CSSProperties;
 }
 
+// Cashfree requires a customer_phone on every order. The app doesn't
+// collect/store a phone number anywhere today, so a fixed placeholder is
+// sent automatically instead of prompting the user for one — this value
+// is never shown to the user and has no effect on payment routing/amount.
+const PLACEHOLDER_PHONE = "9999999999";
+
 /**
  * Drop-in checkout trigger used both on the marketing homepage pricing
  * section and the in-app /pricing page. Only sends `planTier` to the
  * server — the charged amount is decided server-side
  * (lib/payments/plans.ts), never by this component. On click:
- *   1. collects a phone number (required by Cashfree, not currently
- *      stored on the profile),
- *   2. POSTs /api/payments/create-order,
- *   3. hands the returned payment_session_id to the Cashfree Web
+ *   1. POSTs /api/payments/create-order (with a placeholder phone number,
+ *      since Cashfree requires one but the app doesn't collect it),
+ *   2. hands the returned payment_session_id to the Cashfree Web
  *      Checkout SDK, which redirects to Cashfree's hosted payment page
  *      (Cashfree's own UI offers UPI/QR, cards, netbanking — nothing
  *      QR-specific is built here, it's Cashfree's hosted checkout).
@@ -66,8 +71,7 @@ export default function CheckoutButton({
   disabledClassName,
   style,
 }: CheckoutButtonProps) {
-  const [phase, setPhase] = useState<"idle" | "collecting-phone" | "loading">("idle");
-  const [phone, setPhone] = useState("");
+  const [phase, setPhase] = useState<"idle" | "loading">("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function startCheckout(customerPhone: string) {
@@ -98,40 +102,8 @@ export default function CheckoutButton({
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      setPhase("collecting-phone");
+      setPhase("idle");
     }
-  }
-
-  if (phase === "collecting-phone") {
-    return (
-      <form
-        className="flex w-full flex-col gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const digits = phone.replace(/\D/g, "");
-          if (digits.length !== 10) {
-            setError("Enter a valid 10-digit phone number.");
-            return;
-          }
-          void startCheckout(digits);
-        }}
-      >
-        <input
-          type="tel"
-          inputMode="numeric"
-          placeholder="10-digit phone number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="w-full rounded-lg border border-white/[0.12] bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none"
-          maxLength={10}
-          autoFocus
-        />
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        <button type="submit" className={className} style={style}>
-          Continue to payment
-        </button>
-      </form>
-    );
   }
 
   return (
@@ -139,7 +111,7 @@ export default function CheckoutButton({
       <button
         type="button"
         disabled={phase === "loading"}
-        onClick={() => setPhase("collecting-phone")}
+        onClick={() => void startCheckout(PLACEHOLDER_PHONE)}
         className={phase === "loading" ? disabledClassName ?? className : className}
         style={style}
       >
