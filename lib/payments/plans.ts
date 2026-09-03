@@ -17,6 +17,11 @@
 
 import type { PayablePlanId, PlanPrice } from "./types";
 
+// Re-exported so other modules (e.g. payment.service.ts) can import the
+// type from "./plans" alongside getPlanPrice/isPayablePlan without a
+// second import line back to "./types".
+export type { PayablePlanId } from "./types";
+
 export const PLAN_PRICES: Record<PayablePlanId, PlanPrice> = {
   pro: {
     planTier: "pro",
