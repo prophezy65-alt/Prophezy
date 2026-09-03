@@ -149,6 +149,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const chunks: string[] = [];
       results.forEach((result, i) => {
         const file = previousPapers[i];
+        if (!file) return;
         if (result.status === "fulfilled") {
           const { ingested } = result.value;
           chunks.push(`--- ${file.name} ---\n${ingested.rawText}`);
