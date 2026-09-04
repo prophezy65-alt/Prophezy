@@ -120,19 +120,29 @@ export default function ProphezyAssistant() {
 
   return (
     <>
-      <div className="fixed bottom-10 right-8 z-50 flex flex-col items-center gap-1.5">
+      {/* pointer-events-none on the wrapper + pointer-events-auto on just
+          the button/label: without this, the whole fixed rectangle around
+          the floating AI button (including the transparent gap between the
+          button and its "Ask Prophezy AI" label, and any empty margin
+          around them) silently intercepts taps meant for whatever page
+          content happens to render underneath it — reported by a customer
+          as not being able to tap a list item behind the button. Now only
+          the visible button circle and label pill are actually clickable;
+          everywhere else in that fixed box passes the tap through to the
+          page underneath. */}
+      <div className="pointer-events-none fixed bottom-10 right-8 z-50 flex flex-col items-center gap-1.5">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-label={open ? "Close Prophezy AI" : "Open Prophezy AI"}
-          className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#0a0a0a] shadow-lg transition-transform hover:scale-105"
+          className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#0a0a0a] shadow-lg transition-transform hover:scale-105"
           style={{ boxShadow: `0 0 24px ${ACCENT}33` }}
         >
           {open ? <X size={20} className="text-white/70" /> : <ProphezyAiIcon size={30} />}
         </button>
         {!open && (
           <span
-            className="whitespace-nowrap rounded-full border border-white/10 bg-[#0a0a0a]/90 px-2.5 py-1 text-[10px] text-white/50"
+            className="pointer-events-none whitespace-nowrap rounded-full border border-white/10 bg-[#0a0a0a]/90 px-2.5 py-1 text-[10px] text-white/50"
             style={{ fontFamily: "var(--font-mono)" }}
           >
             Ask Prophezy AI
