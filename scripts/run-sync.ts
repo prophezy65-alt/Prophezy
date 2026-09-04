@@ -118,8 +118,31 @@ async function main(): Promise<void> {
         outcome.warnings.forEach((w) => console.log(`      warning: ${w}`));
       }
 
+      // A single dead/renamed company board (e.g. one Ashby or Lever
+      // company removing their public postings page) is normal, routine
+      // drift — not a systemic sync failure — and used to fail this
+      // entire scheduled run on its own, red-flagging the workflow every
+      // time exactly one board disappears even though 100+ others synced
+      // fine. Only fail the run when a MEANINGFUL share of providers are
+      // down, which is what actually indicates something is broken (an
+      // API credential expired, a provider's API is down, etc.) rather
+      // than one listing going stale. Threshold: more than 25% of
+      // providers run failed, or ALL of them failed outright.
+      const failureRatio = summary.providersRun > 0 ? summary.providersFailed / summary.providersRun : 0;
+      const isSystemicFailure = summary.providersFailed >= summary.providersRun || failureRatio > 0.25;
+
       if (summary.providersFailed > 0) {
-        log.error('one or more providers failed this run', { providersFailed: summary.providersFailed });
+        log.warn('one or more providers had failures this run', {
+          providersFailed: summary.providersFailed,
+          providersRun: summary.providersRun,
+          failureRatio,
+        });
+      }
+      if (isSystemicFailure) {
+        log.error('sync run failed: too many providers down to be routine drift', {
+          providersFailed: summary.providersFailed,
+          providersRun: summary.providersRun,
+        });
         process.exitCode = 1;
       }
       break;
