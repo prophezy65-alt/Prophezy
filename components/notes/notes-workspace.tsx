@@ -255,8 +255,19 @@ export default function NotesWorkspace() {
             bottom right, bottom right;
         }
       `}</style>
-      {/* Unified sidebar: actions, search, filters, folders, and the note list all live in one panel. */}
-      <Card className="hud-frame relative flex w-80 shrink-0 flex-col overflow-hidden p-0">
+      {/* Unified sidebar: actions, search, filters, folders, and the note
+          list all live in one panel. Fixed at 320px (w-80) on desktop, but
+          that same fixed width squeezed the editor panel into a sliver on
+          mobile viewports (~380px) with no way to see it — reported by a
+          customer as the two panels "overlapping". Below md, only one of
+          sidebar/editor is shown at a time (matching the mobile
+          back-navigation NoteEditor's onBack prop already expects), each
+          taking the full width; at md+ both show side-by-side as before. */}
+      <Card
+        className={`hud-frame relative ${
+          selectedNoteId ? "hidden md:flex" : "flex"
+        } w-full flex-col overflow-hidden p-0 md:w-80 md:shrink-0`}
+      >
         <div className="flex items-center justify-between px-4 pb-1 pt-3.5">
           <div className="flex items-center gap-2">
             <span className="hud-dot" />
@@ -436,7 +447,11 @@ export default function NotesWorkspace() {
       </Card>
 
       {/* Editor */}
-      <Card className="hud-frame relative flex-1 overflow-hidden p-0">
+      <Card
+        className={`hud-frame relative ${
+          selectedNoteId ? "flex" : "hidden md:flex"
+        } w-full flex-1 overflow-hidden p-0`}
+      >
         {selectedNoteId ? (
           <NoteEditor
             noteId={selectedNoteId}
