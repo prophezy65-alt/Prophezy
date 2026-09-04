@@ -15,15 +15,27 @@ import {
   Link,
   ExperienceEntry,
   EducationEntry,
+  ProjectEntry,
   SkillGroup,
 } from "../models/resume.model";
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const PHONE_REGEX = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/;
 const URL_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^\s,]+)/gi;
+// Non-global twin of URL_REGEX for boolean .test() checks below — a
+// global regex's .test() carries lastIndex state across calls, which
+// silently skips/misfires on alternating calls (e.g. every other bullet
+// line). extractLinks() below still uses the global version for .match(),
+// which is unaffected by this issue.
+const URL_TEST_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^\s,]+)/i;
 
+// "introduction" added — a customer's resume used "INTRODUCTION" as their
+// summary heading and it was silently dropped (matched no header, so its
+// entire block fell into whatever section preceded it), which then made
+// the ATS "Sections" check report summary as missing even though a
+// perfectly good summary paragraph was right there under that heading.
 const SECTION_HEADERS: Record<string, RegExp> = {
-  summary: /^(summary|objective|profile|about)\b/i,
+  summary: /^(summary|objective|profile|about|introduction)\b/i,
   experience: /^(experience|work experience|employment history|professional experience)\b/i,
   education: /^(education|academic background)\b/i,
   projects: /^(projects|personal projects|academic projects)\b/i,
@@ -44,9 +56,33 @@ function extractLinks(text: string): Link[] {
   });
 }
 
+// A resume's contact block isn't always "name on line 1" — two-column
+// layouts in particular often get their lines extracted out of visual
+// order by the PDF text layer, and a name preceded by a blank/odd line
+// broke the old lines[0]-only check (a customer reported their name not
+// being detected despite it clearly being on the resume). This scans the
+// first few non-empty lines instead of trusting only the first one, and
+// skips anything that looks like an email/phone/URL/link rather than a
+// human name.
+function looksLikeName(line: string): boolean {
+  if (!line || line.length >= 60) return false;
+  if (EMAIL_REGEX.test(line) || PHONE_REGEX.test(line) || URL_TEST_REGEX.test(line)) return false;
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 5) return false;
+  const letters = line.replace(/[^a-zA-Z]/g, "").length;
+  return letters / line.length > 0.6;
+}
+
 function extractContact(text: string): ContactInfo {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const fullName = lines[0]?.length && lines[0].length < 60 ? lines[0] : "";
+
+  let fullName = "";
+  for (const line of lines.slice(0, 5)) {
+    if (looksLikeName(line)) {
+      fullName = line;
+      break;
+    }
+  }
 
   const emailMatch = text.match(EMAIL_REGEX);
   const phoneMatch = text.match(PHONE_REGEX);
@@ -154,6 +190,38 @@ function parseEducationBlock(block: string): EducationEntry[] {
   });
 }
 
+// This was missing entirely — splitIntoSections() correctly isolated the
+// "projects" block, but parseResumeText() below never called anything to
+// turn it into ProjectEntry[]; it just hardcoded projects: [] every time,
+// so an imported resume's projects were silently dropped regardless of
+// how they were written (with or without a link/URL — link presence was
+// never actually part of this at all). Mirrors parseExperienceBlock's
+// heuristic: blank-line-separated chunks, first line = title, remaining
+// lines = bullets. A project link found within a chunk is attached to
+// that entry; its line is not also kept as a bullet.
+function parseProjectsBlock(block: string): ProjectEntry[] {
+  if (!block) return [];
+  const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
+  return chunks.map((chunk, i) => {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    const header = lines[0] ?? "";
+    const [namePart] = header.split(/,|\|/);
+    const links = extractLinks(chunk);
+
+    const bullets = lines
+      .slice(1)
+      .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+      .filter((l) => l && !URL_TEST_REGEX.test(l));
+
+    return {
+      id: `proj-${i}`,
+      name: (namePart ?? header ?? "Project").trim(),
+      bullets,
+      link: links[0]?.url,
+    };
+  });
+}
+
 /**
  * Best-effort conversion of raw extracted text into partial ResumeContent.
  * Always returns a result — never throws — since parsed resumes are messy
@@ -169,7 +237,7 @@ export function parseResumeText(text: string): Partial<ResumeContent> {
     experience: parseExperienceBlock(sections.experience || ""),
     education: parseEducationBlock(sections.education || ""),
     skills: parseSkillsBlock(sections.skills || ""),
-    projects: [],
+    projects: parseProjectsBlock(sections.projects || ""),
     certificates: [],
     achievements: [],
   };

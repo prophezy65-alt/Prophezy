@@ -45,7 +45,23 @@ function scoreBullets(
   entries: (ExperienceEntry | ProjectEntry)[],
   label: string
 ): ScoreBreakdown {
-  const bullets = entries.flatMap((e) => e.bullets);
+  // ProjectEntry has both `bullets: string[]` and an optional
+  // free-text `description` — if a project was entered with only a
+  // description paragraph (no separate bullet points added), the score
+  // used to see zero bullets and report "No project writing bullets
+  // found" even though real, gradeable content existed. Split any
+  // populated `description` into sentence-ish lines and treat those as
+  // bullets for scoring purposes; entries that already have `bullets`
+  // are unaffected.
+  const bullets = entries.flatMap((e) => {
+    if (e.bullets.length > 0) return e.bullets;
+    const description = "description" in e ? e.description : undefined;
+    if (!description) return [];
+    return description
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  });
   if (bullets.length === 0) {
     return { category: label, score: 0, maxScore: 100, reasons: [`No ${label.toLowerCase()} bullets found.`] };
   }
