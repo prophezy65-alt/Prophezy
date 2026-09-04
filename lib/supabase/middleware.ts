@@ -3,7 +3,23 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Routes that don't require a signed-in user.
 // "/auth/*" (OAuth + email-link callback) is matched separately below.
-const PUBLIC_ROUTES = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/verify-email"];
+// "/api/payments/webhook" is Cashfree's server calling us directly — it
+// will never carry a Supabase session cookie, and authenticity is
+// verified independently via HMAC signature verification inside that
+// route (see lib/payments/cashfree.client.ts verifyCashfreeWebhookSignature),
+// not via login. Without this exemption every webhook delivery gets
+// redirected to /login with a 307 and Cashfree never reaches the actual
+// handler — payments then appear to "hang" forever on /pricing/return
+// even though Cashfree successfully charged the customer.
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/api/payments/webhook",
+];
 
 /**
  * Headers used to forward the already-verified user identity to route
