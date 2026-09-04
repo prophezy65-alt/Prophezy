@@ -30,8 +30,12 @@ function getBaseUrl(): string {
 }
 
 function getCredentials(): { clientId: string; clientSecret: string } {
-  const clientId = process.env.CASHFREE_CLIENT_ID;
-  const clientSecret = process.env.CASHFREE_CLIENT_SECRET;
+  // .trim() guards against invisible leading/trailing whitespace or a
+  // trailing newline getting pasted into the Vercel env var value —
+  // Cashfree rejects a credential with stray whitespace as a plain 401
+  // "authentication Failed", with no indication it was a whitespace issue.
+  const clientId = process.env.CASHFREE_CLIENT_ID?.trim();
+  const clientSecret = process.env.CASHFREE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
     throw new Error(
       "Missing CASHFREE_CLIENT_ID or CASHFREE_CLIENT_SECRET in the server environment."
