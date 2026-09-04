@@ -1,7 +1,11 @@
 import type { MetadataRoute } from "next";
 import { createClient } from "@/lib/supabase/server";
 
-const SITE_URL = "https://prophezy.app";
+// Must match the real production domain — this was previously
+// "https://prophezy.app" (not this project's domain), which meant every
+// URL Google indexed from the sitemap pointed at a domain that isn't
+// actually served by this app.
+const SITE_URL = "https://www.prophezy.online";
 
 const STATIC_ROUTES = [
   "",
