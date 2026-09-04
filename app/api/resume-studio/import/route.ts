@@ -1,3 +1,13 @@
+// Must be the first import: pdf-parse pulls in pdfjs-dist internally for
+// text-layer extraction, and pdfjs-dist expects DOMMatrix/ImageData/Path2D
+// to exist as browser globals. In the Vercel Node.js serverless runtime
+// they don't, which crashed every PDF import with "DOMMatrix is not
+// defined" (reported by a customer via the Resume Studio "Import
+// PDF/DOCX" button). Same fix already applied to the research-papers and
+// exam-predictor routes for the same underlying pdfjs-dist behavior — see
+// lib/polyfills/pdf-node-polyfill.ts for what it does and why.
+import "@/lib/polyfills/pdf-node-polyfill";
+
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { parseResumeFile } from "@/lib/resume-studio/services/parser.service";
