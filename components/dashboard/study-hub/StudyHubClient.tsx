@@ -187,15 +187,17 @@ function Hero({
           if (topicInput.trim()) onStart(topicInput.trim());
         }}
       >
-        <div className="flex items-center gap-3 rounded-2xl border border-[#C3D0DE] bg-white p-2 pl-5 shadow-[0_8px_30px_rgb(0,0,0,0.06)] focus-within:border-[#00B8D9] focus-within:ring-2 focus-within:ring-[#00B8D9]/20">
-          <Search size={20} className="shrink-0 text-[#9CA3AF]" />
-          <input
-            value={topicInput}
-            onChange={(e) => setTopicInput(e.target.value)}
-            placeholder="e.g. Machine Learning, DBMS, React..."
-            className="h-12 flex-1 bg-transparent text-base text-[#111827] outline-none placeholder:text-[#9CA3AF]"
-          />
-          <PrimaryButton type="submit" disabled={!topicInput.trim()} className="h-11 px-5">
+        <div className="flex flex-col gap-3 rounded-2xl border border-[#C3D0DE] bg-white p-3 shadow-[0_8px_30px_rgb(0,0,0,0.06)] focus-within:border-[#00B8D9] focus-within:ring-2 focus-within:ring-[#00B8D9]/20 sm:flex-row sm:items-center sm:p-2 sm:pl-5">
+          <div className="flex flex-1 items-center gap-3">
+            <Search size={20} className="shrink-0 text-[#9CA3AF]" />
+            <input
+              value={topicInput}
+              onChange={(e) => setTopicInput(e.target.value)}
+              placeholder="e.g. Machine Learning, DBMS, React..."
+              className="h-12 flex-1 bg-transparent text-base text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+            />
+          </div>
+          <PrimaryButton type="submit" disabled={!topicInput.trim()} className="h-11 w-full px-5 sm:w-auto">
             <Sparkles size={16} /> Start learning
           </PrimaryButton>
         </div>
