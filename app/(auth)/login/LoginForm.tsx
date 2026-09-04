@@ -44,7 +44,14 @@ export default function LoginForm() {
       footer={
         <>
           New here?{" "}
-          <Link href="/signup" className="text-[#34d399] hover:underline">
+          <Link
+            href={
+              redirectTo !== "/app"
+                ? `/signup?redirectTo=${encodeURIComponent(redirectTo)}`
+                : "/signup"
+            }
+            className="text-[#34d399] hover:underline"
+          >
             Create an account
           </Link>
         </>

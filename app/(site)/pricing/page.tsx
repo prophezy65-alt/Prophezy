@@ -27,7 +27,17 @@ export const dynamic = "force-dynamic";
  * is INDEPENDENT of anything hardcoded here: isPayablePlan() is the same
  * guard the API route itself enforces.
  */
-export default async function PricingPage() {
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string }>;
+}) {
+  // Set by CheckoutButton's login redirect (?plan=pro / ?plan=premium) so
+  // that after a person signs up or logs in and lands back here, the
+  // matching plan's checkout resumes automatically at the phone-number
+  // step instead of making them find and re-click "Upgrade" again.
+  const { plan: resumePlan } = await searchParams;
+
   // lib/supabase/types.ts (the generated Database type) predates the
   // credit-system tables — same gap noted in
   // lib/credits/credit.repository.ts, worked around the same way here:
@@ -106,6 +116,7 @@ export default async function PricingPage() {
                     label={`Upgrade to ${plan.name}`}
                     className={buttonClass}
                     disabledClassName={disabledClass}
+                    autoStart={resumePlan === plan.id}
                   />
                 ) : (
                   <button
