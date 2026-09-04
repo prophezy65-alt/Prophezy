@@ -17,6 +17,8 @@
  *   4. fetch the internship and return its REAL applyUrl
  *   5. bump the existing apply_count counter (InternshipRepository already
  *      has this — reused, not duplicated)
+ *   6. persist the unlock durably (internship_unlocks table) so it's
+ *      visible again on any future page load/session
  *
  * PHASE 5 FIX: prior to this, step 2 only ran `if (isFree)` — Pro users
  * had no unlock cap enforced at all despite the spec defining 25/period
@@ -29,6 +31,7 @@
  * so there is exactly one authoritative record of every unlock.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { InternshipRepository } from "../db/repositories/internship.repository";
 import { EngineError, NotFoundError } from "../utils/errors";
 import {
@@ -138,6 +141,33 @@ export async function unlockInternshipApplication(
   // Best-effort: a failure here shouldn't undo a successful unlock the
   // user already paid for and received the URL for.
   await repository.incrementCounter(internshipId, "apply_count").catch(() => {});
+
+  // Persist this unlock durably so it's visible again on any future page
+  // load/session — previously the unlocked applyUrl only lived in the
+  // client's in-memory query cache and reset on every reload. Same
+  // best-effort pattern as the counter above: a failure here must never
+  // undo an unlock the user already paid credits for.
+  //
+  // Two typing-only fixes here vs. the original, no logic change:
+  //  1. `as unknown as SupabaseClient` — same pre-existing gap as
+  //     lib/credits/credit.repository.ts: lib/supabase/types.ts hasn't
+  //     been regenerated since internship_unlocks was added, so the typed
+  //     client doesn't know this table exists yet.
+  //  2. `Promise.resolve(...).catch(...)` instead of calling `.catch`
+  //     directly on the query builder — Supabase's PostgrestFilterBuilder
+  //     is PromiseLike but its type doesn't declare `.catch`, only
+  //     `.then`/`.match`. Wrapping in Promise.resolve() gives a real
+  //     Promise with `.catch` while awaiting the exact same call.
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = (await createClient()) as unknown as SupabaseClient;
+  await Promise.resolve(
+    supabase
+      .from("internship_unlocks")
+      .upsert(
+        { user_id: userId, internship_id: internshipId, apply_url: applyUrl },
+        { onConflict: "user_id,internship_id" }
+      )
+  ).catch(() => {});
 
   // Re-read after the spend (not reused from remainingBeforeSpend) so the
   // returned count reflects the unlock that just happened, straight from

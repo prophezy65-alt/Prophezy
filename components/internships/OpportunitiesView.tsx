@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SlidersHorizontal, Radar, GraduationCap, Briefcase, Lock, Unlock } from "lucide-react";
 import type { EmploymentType, InternshipFilters, SortKey } from "@/lib/internships/types";
-import { useInternshipSearch, useSavedInternships, useRecentlyViewed, useUnlockStatus } from "@/lib/internships-client/hooks";
+import { useInternshipSearch, useSavedInternships, useRecentlyViewed, useUnlockStatus, useUnlockedInternships } from "@/lib/internships-client/hooks";
 import { SearchBar } from "@/components/internships/SearchBar";
 import { SortSelect } from "@/components/internships/SortSelect";
 import { FiltersPanel } from "@/components/internships/FiltersPanel";
@@ -16,12 +16,13 @@ import { Button } from "@/components/ui/button";
 import { InternshipApiError } from "@/lib/internships-client/api";
 import { cn } from "@/lib/utils";
 
-type Tab = "discover" | "saved" | "applications" | "recommended" | "recent";
+type Tab = "discover" | "saved" | "applications" | "recommended" | "recent" | "unlocked";
 type Category = "internships" | "jobs";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "discover", label: "Discover" },
   { id: "recommended", label: "Recommended" },
+  { id: "unlocked", label: "Unlocked" },
   { id: "saved", label: "Saved" },
   { id: "applications", label: "Applications" },
   { id: "recent", label: "Recently Viewed" },
@@ -66,6 +67,12 @@ export function OpportunitiesView() {
 
   const search = useInternshipSearch(searchRequest);
   const saved = useSavedInternships();
+  // Always mounted (not gated behind the "unlocked" tab) so that every
+  // card everywhere in the app — Discover, Saved, Recommended, etc. — has
+  // its "Unlocked" badge correctly seeded from the durable server-side
+  // list as soon as the page loads, not only once the Unlocked tab itself
+  // is opened.
+  const unlocked = useUnlockedInternships();
   // Recently-viewed is only ever rendered on the "recent" tab (unlike
   // `saved`, which InternshipCard's SaveButton also needs on every card in
   // Discover) — only fetch it once the user actually opens that tab,
@@ -130,6 +137,9 @@ export function OpportunitiesView() {
             {t.id === "saved" && (saved.data?.length ?? 0) > 0 && (
               <span className="ml-1.5 text-xs text-mist">({saved.data?.length})</span>
             )}
+            {t.id === "unlocked" && (unlocked.data?.length ?? 0) > 0 && (
+              <span className="ml-1.5 text-xs text-mist">({unlocked.data?.length})</span>
+            )}
             {tab === t.id && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-signal" />}
           </button>
         ))}
@@ -187,6 +197,38 @@ export function OpportunitiesView() {
       )}
 
       {tab === "recommended" && <RecommendationsSection />}
+
+      {tab === "unlocked" && (
+        <div>
+          {unlocked.isLoading && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="glass-panel h-44 animate-pulse rounded-2xl border border-border" />
+              ))}
+            </div>
+          )}
+          {unlocked.isError && (
+            <div className="glass-panel rounded-2xl border border-danger/20 p-8 text-center text-sm text-ink">
+              {unlocked.error instanceof InternshipApiError ? unlocked.error.message : "Couldn't load your unlocked internships."}
+            </div>
+          )}
+          {!unlocked.isLoading && !unlocked.isError && (unlocked.data?.length ?? 0) === 0 && (
+            <div className="glass-panel flex flex-col items-center gap-2 rounded-2xl border border-border p-14 text-center">
+              <p className="text-sm font-medium text-ink">Nothing unlocked yet</p>
+              <p className="max-w-xs text-xs text-mist">
+                Internships you unlock will stay here permanently, so you can always find them again.
+              </p>
+            </div>
+          )}
+          {!unlocked.isLoading && (unlocked.data?.length ?? 0) > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {unlocked.data?.map((entry) => (
+                <InternshipCard key={entry.internship.id} internship={entry.internship} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === "saved" && (
         <div>

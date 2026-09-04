@@ -42,6 +42,13 @@ export interface UnlockStatus {
   remaining: number | null;
 }
 
+/** One entry in the durable "everything this user has unlocked" list —
+ * see GET /api/internships/unlocked and the internship_unlocks table. */
+export interface UnlockedInternshipEntry {
+  internship: InternshipRecord;
+  applyUrl: string;
+}
+
 export class InternshipApiError extends Error {
   code: string;
   status: number;
@@ -170,6 +177,13 @@ export const internshipsApi = {
   // was hit from a 403 after attempting an unlock.
   getUnlockStatus(): Promise<UnlockStatus> {
     return request<UnlockStatus>(`/api/internships/unlocks`);
+  },
+
+  // Full, durable list of every internship this user has unlocked, with
+  // its real applyUrl — never resets on reload (see internship_unlocks
+  // table), unlike the in-memory per-card cache from unlockApplication().
+  listUnlocked(): Promise<UnlockedInternshipEntry[]> {
+    return request<UnlockedInternshipEntry[]>(`/api/internships/unlocked`);
   },
 
   listApplications(

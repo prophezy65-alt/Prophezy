@@ -57,7 +57,7 @@ export function FiltersPanel({ open, onClose, filters, onChange }: FiltersPanelP
   ].filter(Boolean).length;
 
   return (
-    <div className="glass-panel absolute right-0 top-full z-30 mt-2 w-full max-w-sm rounded-2xl border border-border p-5 shadow-xl sm:right-0">
+    <div className="absolute right-0 top-full z-30 mt-2 w-full max-w-sm rounded-2xl border-2 border-signal/40 bg-[#151420] p-5 shadow-2xl sm:right-0">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="font-display text-sm font-medium text-ink">Filters</h3>
         <button type="button" onClick={onClose} className="text-mist hover:text-ink" aria-label="Close filters">

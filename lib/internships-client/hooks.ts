@@ -9,7 +9,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import type { SearchRequest, ApplicationStatus, ApplicationDocumentRef } from "@/lib/internships/types";
-import { internshipsApi, InternshipApiError, type UnlockStatus } from "./api";
+import { internshipsApi, InternshipApiError, type UnlockStatus, type UnlockedInternshipEntry } from "./api";
 import { useToast } from "@/components/providers/toast-provider";
 
 const KEYS = {
@@ -21,14 +21,13 @@ const KEYS = {
   recommendations: (limit: number) => ["internships", "recommendations", limit] as QueryKey,
   notifications: (unreadOnly: boolean) => ["internships", "notifications", unreadOnly] as QueryKey,
   /** Client-side-only "have I unlocked this internship's real applyUrl in
-   * this session" flag — set true the moment a POST /:id/unlock succeeds.
-   * Not persisted server-side per-internship (only the aggregate monthly
-   * count is), so this resets on a hard page reload; that's intentional —
-   * it just means the button goes back to "Unlock to Apply" and clicking
-   * it again calls the (idempotent-from-the-user's-perspective, but still
-   * plan/cap/credit-checked) unlock endpoint again. */
+   * this session" flag — set true the moment a POST /:id/unlock succeeds,
+   * or seeded from useUnlockedInternships() on page load. Not persisted
+   * itself (that's internship_unlocks, server-side) — this is just the
+   * fast in-memory cache every InternshipCard reads from. */
   unlocked: (internshipId: string) => ["internships", "unlocked", internshipId] as QueryKey,
   unlockStatus: () => ["internships", "unlock-status"] as QueryKey,
+  unlockedList: () => ["internships", "unlocked-list"] as QueryKey,
 };
 
 /** Cursor-paginated / infinite-scroll internship search. */
@@ -111,6 +110,12 @@ export function useToggleSaved() {
  * already-unlocked card just reopen the link for free, instead of calling
  * POST /:id/unlock again and spending a second credit / counting a second
  * time against the plan's monthly cap for something already paid for.
+ *
+ * This cache entry is seeded two ways: (1) immediately after a successful
+ * unlock (see useUnlockApplication), and (2) in bulk on page load from the
+ * durable server-side list (see useUnlockedInternships) — so a card shows
+ * "Unlocked" correctly even on a fresh page load/session, not just within
+ * the same browser tab that did the unlocking.
  */
 export function useUnlockedUrl(internshipId: string): string | null {
   const { data } = useQuery({
@@ -138,6 +143,31 @@ export function useUnlockStatus() {
 }
 
 /**
+ * Every internship this user has ever unlocked — the durable,
+ * server-confirmed list (internship_unlocks table), not the in-memory
+ * per-card cache from useUnlockedUrl. Also seeds that per-card cache for
+ * every entry as soon as this loads, so every InternshipCard's existing
+ * "Unlocked" badge/button state is correct immediately on page load —
+ * InternshipCard itself needs zero changes to pick this up. Used both to
+ * power the dedicated "Unlocked" tab and to keep every card everywhere
+ * else in the app correctly marked.
+ */
+export function useUnlockedInternships() {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: KEYS.unlockedList(),
+    queryFn: async () => {
+      const entries = await internshipsApi.listUnlocked();
+      for (const entry of entries) {
+        queryClient.setQueryData(KEYS.unlocked(entry.internship.id), entry.applyUrl);
+      }
+      return entries;
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
  * Unlocks and returns the real application link for one internship — the
  * only place applyUrl can be obtained client-side now that search/detail
  * strip it (Phase 5). Spends a credit and counts against the plan's
@@ -159,6 +189,10 @@ export function useUnlockApplication() {
         allowance: prev?.allowance ?? null,
         remaining: result.unlocksRemaining,
       }));
+      // Also invalidate the durable list so the new "Unlocked" tab and any
+      // other consumer pick up this fresh unlock on next read, instead of
+      // only knowing about it via the single per-card cache entry above.
+      void queryClient.invalidateQueries({ queryKey: KEYS.unlockedList() });
     },
     onError: (error: unknown) => {
       toast.error(error instanceof InternshipApiError ? error.message : "Couldn't open the application link.");
