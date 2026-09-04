@@ -51,7 +51,7 @@ function tabColor(kind: StudyArtifactKind | "overview"): string {
 function LightCard({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
     <div
-      className={`rounded-2xl border border-[#C3D0DE] bg-white shadow-[0_6px_24px_rgb(15,23,42,0.10)] transition-all hover:border-[#00B8D9]/50 hover:shadow-[0_10px_32px_rgb(0,184,217,0.18)] ${className}`}
+      className={`rounded-2xl border border-[#C3D0DE] bg-[#EAF6FB] shadow-[0_6px_24px_rgb(15,23,42,0.10)] transition-all hover:border-[#00B8D9]/50 hover:shadow-[0_10px_32px_rgb(0,184,217,0.18)] ${className}`}
     >
       {children}
     </div>
@@ -88,7 +88,7 @@ function GhostButton({ onClick, children, className = "" }: { onClick?: () => vo
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl border border-[#C3D0DE] bg-white px-3 py-2 text-sm font-medium text-[#111827] transition-colors hover:bg-[#F4F7FA] active:scale-[0.98] ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl border border-[#C3D0DE] bg-[#EAF6FB] px-3 py-2 text-sm font-medium text-[#111827] transition-colors hover:bg-[#F4F7FA] active:scale-[0.98] ${className}`}
     >
       {children}
     </button>
@@ -131,7 +131,7 @@ export default function StudyHubClient({ firstName }: { firstName: string | null
   };
 
   return (
-    <div className="-m-6 min-h-[calc(100vh-4rem)] rounded-3xl bg-gradient-to-br from-[#C7D5E3] via-[#D6E2ED] to-[#E8EEF3] p-6 lg:-m-10 lg:p-10">
+    <div className="-m-6 min-h-[calc(100vh-4rem)] rounded-3xl bg-gradient-to-br from-[#BFE6F5] via-[#D6EEF9] to-[#E9F7FC] p-6 lg:-m-10 lg:p-10">
       {!activeTopic ? (
         <Hero greeting={greeting} firstName={firstName} topicInput={topicInput} setTopicInput={setTopicInput} onStart={openTopic} />
       ) : (
@@ -167,7 +167,7 @@ function Hero({
 }) {
   return (
     <div className="flex flex-col items-center px-4 py-16 text-center lg:py-24">
-      <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-[#C3D0DE] bg-white px-3 py-1 text-xs font-medium text-[#00B8D9]">
+      <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-[#C3D0DE] bg-[#EAF6FB] px-3 py-1 text-xs font-medium text-[#00B8D9]">
         <Sparkles size={12} /> AI Learning Workspace
       </div>
 
@@ -187,7 +187,7 @@ function Hero({
           if (topicInput.trim()) onStart(topicInput.trim());
         }}
       >
-        <div className="flex flex-col gap-3 rounded-2xl border border-[#C3D0DE] bg-white p-3 shadow-[0_8px_30px_rgb(0,0,0,0.06)] focus-within:border-[#00B8D9] focus-within:ring-2 focus-within:ring-[#00B8D9]/20 sm:flex-row sm:items-center sm:p-2 sm:pl-5">
+        <div className="flex flex-col gap-3 rounded-2xl border border-[#C3D0DE] bg-[#EAF6FB] p-3 shadow-[0_8px_30px_rgb(0,0,0,0.06)] focus-within:border-[#00B8D9] focus-within:ring-2 focus-within:ring-[#00B8D9]/20 sm:flex-row sm:items-center sm:p-2 sm:pl-5">
           <div className="flex flex-1 items-center gap-3">
             <Search size={20} className="shrink-0 text-[#9CA3AF]" />
             <input
@@ -225,7 +225,7 @@ function TopicWorkspace({ topic, onBack }: { topic: string; onBack: () => void }
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 overflow-x-auto rounded-2xl border border-[#C3D0DE] bg-white p-1.5">
+      <div className="flex flex-wrap gap-1.5 overflow-x-auto rounded-2xl border border-[#C3D0DE] bg-[#EAF6FB] p-1.5">
         {ARTIFACT_TABS.map((tab) => {
           const Icon = tab.icon;
           const isOverview = tab.kind === "overview";

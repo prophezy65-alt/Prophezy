@@ -130,7 +130,7 @@ export default function ProphezyAssistant() {
           the visible button circle and label pill are actually clickable;
           everywhere else in that fixed box passes the tap through to the
           page underneath. */}
-      <div className="pointer-events-none fixed bottom-10 right-8 z-50 flex flex-col items-center gap-1.5">
+      <div className="pointer-events-none fixed bottom-24 right-4 z-50 flex flex-col items-center gap-1.5 sm:bottom-10 sm:right-8">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -154,7 +154,7 @@ export default function ProphezyAssistant() {
         <div
           role="dialog"
           aria-label="Prophezy AI assistant"
-          className="fixed bottom-28 right-8 z-50 flex h-[32rem] w-96 max-w-[calc(100vw-3rem)] flex-col rounded-xl border border-white/10 bg-[#050505] shadow-2xl"
+          className="fixed bottom-40 right-4 z-50 flex h-[32rem] max-h-[calc(100vh-13rem)] w-96 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-white/10 bg-[#050505] shadow-2xl sm:bottom-28 sm:right-8 sm:max-h-[32rem] sm:max-w-[calc(100vw-3rem)]"
         >
           <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-3">
             <ProphezyAiIcon size={20} />

@@ -80,7 +80,7 @@ export function OpportunitiesView() {
   const recent = useRecentlyViewed(30, tab === "recent");
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-6xl overflow-x-hidden">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-signal/30 bg-signal/10 text-signal">
@@ -122,14 +122,14 @@ export function OpportunitiesView() {
         </button>
       </div>
 
-      <div className="mb-6 flex border-b border-border">
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              "relative px-4 py-2.5 text-sm font-medium transition-colors",
+              "relative shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors sm:px-4",
               tab === t.id ? "text-ink" : "text-mist hover:text-ink",
             )}
           >
