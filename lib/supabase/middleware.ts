@@ -67,6 +67,24 @@ export async function updateSession(request: NextRequest) {
   );
 
   if (!user && !isPublic) {
+    // API routes must get a real 401 JSON response, never a redirect.
+    // fetch() automatically follows a 307/308 redirect and resends the
+    // ORIGINAL method to the new location — so a POST to a protected API
+    // route (e.g. /api/payments/create-order with an expired/missing
+    // session) was being redirected to /login, and fetch dutifully
+    // re-POSTed to /login, which is a page route that only accepts GET.
+    // That surfaced as a confusing "405 Invalid Request Method" /
+    // "server returned an empty response" instead of a clean 401 that
+    // client code already knows how to handle (send the person to sign
+    // in, then bring them back). Page navigations are unaffected — they
+    // still redirect to /login below exactly as before.
+    if (path.startsWith("/api/")) {
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHENTICATED", message: "Sign in required." } },
+        { status: 401 },
+      );
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirectTo", path);
