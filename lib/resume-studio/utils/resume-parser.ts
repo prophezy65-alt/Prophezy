@@ -140,6 +140,29 @@ function clampList<T>(list: T[], max: number): T[] {
   return list.length > max ? list.slice(0, max) : list;
 }
 
+// Some PDF extractors (particularly for resumes with generous line-spacing
+// between bullets) insert a blank-line gap between individual bullets of
+// the SAME entry, not just between different entries — a customer's PDF
+// did exactly this, and every bullet under one project became its own
+// separate project entry (report: "ek hi project ke bullets alag-alag
+// project ban rhe h"). A chunk whose first line starts with a bullet
+// marker is never a genuine entry title, so merge it back into the
+// previous chunk instead of letting it start a new entry. Shared by both
+// parseExperienceBlock and parseProjectsBlock below since either section
+// can hit this depending on the source PDF's line spacing.
+function mergeBulletContinuationChunks(rawChunks: string[]): string[] {
+  const chunks: string[] = [];
+  for (const raw of rawChunks) {
+    const firstLine = raw.split("\n")[0]?.trim() ?? "";
+    if (chunks.length > 0 && /^[-•*]\s+/.test(firstLine)) {
+      chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}\n${raw}`;
+    } else {
+      chunks.push(raw);
+    }
+  }
+  return chunks;
+}
+
 // "introduction" added — a customer's resume used "INTRODUCTION" as their
 // summary heading and it was silently dropped (matched no header, so its
 // entire block fell into whatever section preceded it), which then made
@@ -286,7 +309,7 @@ function parseSkillsBlock(block: string): SkillGroup[] {
 // jobs got merged, so split right after each date-range line instead.
 function parseExperienceBlock(block: string): ExperienceEntry[] {
   if (!block) return [];
-  const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
+  const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
   const entries: ExperienceEntry[] = [];
   let idx = 0;
 
@@ -382,7 +405,7 @@ function parseEducationBlock(block: string): EducationEntry[] {
 // several projects merged, so split right after each date line.
 function parseProjectsBlock(block: string): ProjectEntry[] {
   if (!block) return [];
-  const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
+  const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
   const entries: ProjectEntry[] = [];
   let idx = 0;
 
