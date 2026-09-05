@@ -29,6 +29,48 @@ const URL_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^
 // which is unaffected by this issue.
 const URL_TEST_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^\s,]+)/i;
 
+// Every one of these mirrors an exact limit in
+// lib/resume-studio/validation/resume.validation.ts (createResumeSchema).
+// A customer's PDF triggered "[resume-studio CREATE] validation failed"
+// with a 400 immediately after import "succeeded" — this parser is
+// heuristic/regex-based over arbitrary uploaded PDFs, so it WILL
+// eventually produce a bullet array too long, a name too long, etc. for
+// some real-world resume layout no matter how the heuristics are tuned
+// (the concrete trigger here: a project section with no full blank line
+// between entries merges multiple projects into one bullet list, easily
+// exceeding the 10-bullet cap). Rather than chase each individual layout
+// that can exceed a limit, every field the parser fills in is clamped
+// here to the schema's own limits, so parsed output can never fail that
+// validation — worst case a very long bullet gets truncated or a long
+// list gets trimmed, which is always safe and always better than a hard
+// 400 that blocks the upload entirely.
+const LIMITS = {
+  name: 120,
+  email: 200,
+  phone: 30,
+  linkLabel: 60,
+  linkUrl: 500,
+  linksMax: 10,
+  summary: 2000,
+  companyOrRole: 200,
+  degreeOrInstitution: 200,
+  bulletLen: 400,
+  experienceBulletsMax: 15,
+  projectBulletsMax: 10,
+  category: 80,
+  skillItem: 60,
+  skillItemsMax: 50,
+  projectName: 200,
+};
+
+function clamp(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function clampList<T>(list: T[], max: number): T[] {
+  return list.length > max ? list.slice(0, max) : list;
+}
+
 // "introduction" added — a customer's resume used "INTRODUCTION" as their
 // summary heading and it was silently dropped (matched no header, so its
 // entire block fell into whatever section preceded it), which then made
@@ -47,13 +89,18 @@ const SECTION_HEADERS: Record<string, RegExp> = {
 function extractLinks(text: string): Link[] {
   const matches = text.match(URL_REGEX) ?? [];
   const unique = [...new Set(matches)];
-  return unique.map((url) => {
+  const links = unique.map((url) => {
     const normalized = url.startsWith("http") ? url : `https://${url}`;
     let type: Link["type"] = "other";
     if (/github\.com/i.test(url)) type = "github";
     else if (/linkedin\.com/i.test(url)) type = "linkedin";
-    return { label: type === "other" ? "Website" : type, url: normalized, type };
+    return {
+      label: clamp(type === "other" ? "Website" : type, LIMITS.linkLabel),
+      url: clamp(normalized, LIMITS.linkUrl),
+      type,
+    };
   });
+  return clampList(links, LIMITS.linksMax);
 }
 
 // A resume's contact block isn't always "name on line 1" — two-column
@@ -89,9 +136,9 @@ function extractContact(text: string): ContactInfo {
   const links = extractLinks(text);
 
   return {
-    fullName,
-    email: emailMatch?.[0],
-    phone: phoneMatch?.[0],
+    fullName: clamp(fullName, LIMITS.name),
+    email: emailMatch?.[0] ? clamp(emailMatch[0], LIMITS.email) : undefined,
+    phone: phoneMatch?.[0] ? clamp(phoneMatch[0], LIMITS.phone) : undefined,
     links,
   };
 }
@@ -138,14 +185,20 @@ function parseSkillsBlock(block: string): SkillGroup[] {
     if (colonSplit.length === 2) {
       groups.push({
         id: `skill-${idx++}`,
-        category: colonSplit[0]!.trim(),
-        items: colonSplit[1]!.split(/[,•]/).map((s) => s.trim()).filter(Boolean),
+        category: clamp(colonSplit[0]!.trim(), LIMITS.category),
+        items: clampList(
+          colonSplit[1]!.split(/[,•]/).map((s) => clamp(s.trim(), LIMITS.skillItem)).filter(Boolean),
+          LIMITS.skillItemsMax
+        ),
       });
     } else {
       groups.push({
         id: `skill-${idx++}`,
         category: "Skills",
-        items: line.split(/[,•]/).map((s) => s.trim()).filter(Boolean),
+        items: clampList(
+          line.split(/[,•]/).map((s) => clamp(s.trim(), LIMITS.skillItem)).filter(Boolean),
+          LIMITS.skillItemsMax
+        ),
       });
     }
   }
@@ -161,12 +214,18 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
     const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
     const header = lines[0] ?? "";
     const [rolePart, companyPart] = header.split(/,|\|| at /i);
-    const bullets = lines.slice(1).map((l) => l.replace(/^[-•*]\s*/, "")).filter(Boolean);
+    const bullets = clampList(
+      lines
+        .slice(1)
+        .map((l) => clamp(l.replace(/^[-•*]\s*/, ""), LIMITS.bulletLen))
+        .filter(Boolean),
+      LIMITS.experienceBulletsMax
+    );
 
     return {
       id: `exp-${i}`,
-      role: (rolePart ?? "Role").trim(),
-      company: (companyPart ?? "Company").trim(),
+      role: clamp((rolePart ?? "Role").trim(), LIMITS.companyOrRole),
+      company: clamp((companyPart ?? "Company").trim(), LIMITS.companyOrRole),
       dateRange: { start: "", end: null, isCurrent: false },
       bullets,
     };
@@ -183,8 +242,8 @@ function parseEducationBlock(block: string): EducationEntry[] {
 
     return {
       id: `edu-${i}`,
-      degree: (degreePart ?? "Degree").trim(),
-      institution: (institutionPart ?? "Institution").trim(),
+      degree: clamp((degreePart ?? "Degree").trim(), LIMITS.degreeOrInstitution),
+      institution: clamp((institutionPart ?? "Institution").trim(), LIMITS.degreeOrInstitution),
       dateRange: { start: "", end: null, isCurrent: false },
     };
   });
@@ -208,14 +267,18 @@ function parseProjectsBlock(block: string): ProjectEntry[] {
     const [namePart] = header.split(/,|\|/);
     const links = extractLinks(chunk);
 
-    const bullets = lines
-      .slice(1)
-      .map((l) => l.replace(/^[-•*]\s*/, "").trim())
-      .filter((l) => l && !URL_TEST_REGEX.test(l));
+    const bullets = clampList(
+      lines
+        .slice(1)
+        .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+        .filter((l) => l && !URL_TEST_REGEX.test(l))
+        .map((l) => clamp(l, LIMITS.bulletLen)),
+      LIMITS.projectBulletsMax
+    );
 
     return {
       id: `proj-${i}`,
-      name: (namePart ?? header ?? "Project").trim(),
+      name: clamp((namePart ?? header ?? "Project").trim(), LIMITS.projectName),
       bullets,
       link: links[0]?.url,
     };
@@ -233,7 +296,7 @@ export function parseResumeText(text: string): Partial<ResumeContent> {
 
   return {
     contact,
-    summary: { summary: sections.summary || undefined },
+    summary: { summary: sections.summary ? clamp(sections.summary, LIMITS.summary) : undefined },
     experience: parseExperienceBlock(sections.experience || ""),
     education: parseEducationBlock(sections.education || ""),
     skills: parseSkillsBlock(sections.skills || ""),
