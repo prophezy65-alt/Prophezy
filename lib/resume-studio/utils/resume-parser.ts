@@ -29,6 +29,75 @@ const URL_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^
 // which is unaffected by this issue.
 const URL_TEST_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.com)[^\s,]+)/i;
 
+// Matches a date-range fragment sitting inside a line — "Jun 2026–July
+// 2026", "Jul 2025 - Oct 2025", "May 2026-Present", bare "2019 - 2023",
+// etc. Used for two things below: (1) actually populating dateRange
+// instead of always leaving it blank, and (2) detecting where one job
+// entry ends and the next begins in resumes that put the company+dates
+// line AFTER the bullets rather than before them (see the merged-entries
+// branch inside parseExperienceBlock below).
+const MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const DATE_TOKEN = `(?:${MONTH}\\.?\\s+\\d{4}|\\d{4})`;
+const DATE_RANGE_REGEX = new RegExp(`${DATE_TOKEN}\\s*[-–—]+\\s*(?:${DATE_TOKEN}|present|current)`, "i");
+const MONTH_NUMBERS: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+/**
+ * Normalizes one date token ("Jul 2025", "2025", "Present") to a
+ * consistent "YYYY-MM" (or bare "YYYY" if no month was written) so the
+ * resume editor always shows the same format regardless of how the
+ * original PDF wrote it — a customer specifically asked for this
+ * ("diff way me bhi kisi ne likha ho skta, jaise maine Jul 2025 - Oct
+ * 2025 aise likha h": different people write dates differently, this
+ * should still work). Returns null for "present"/"current" — that's
+ * handled as isCurrent instead of an end date.
+ */
+function normalizeDateToken(token: string): string | null {
+  const t = token.trim().toLowerCase();
+  if (t === "present" || t === "current") return null;
+  const monthMatch = t.match(/^([a-z]+)\.?\s+(\d{4})$/);
+  if (monthMatch) {
+    const monthKey = monthMatch[1]!.slice(0, 3);
+    const num = MONTH_NUMBERS[monthKey];
+    return num ? `${monthMatch[2]}-${num}` : monthMatch[2]!;
+  }
+  const yearOnly = t.match(/^\d{4}$/);
+  return yearOnly ? yearOnly[0] : null;
+}
+
+interface ExtractedDateRange {
+  start: string;
+  end: string | null;
+  isCurrent: boolean;
+  /** The rest of the line with the date-range text removed — typically
+   *  the company/organization name that shared the line with the dates. */
+  remainder: string;
+}
+
+function extractDateRangeFromLine(line: string): ExtractedDateRange | null {
+  const match = line.match(DATE_RANGE_REGEX);
+  if (!match) return null;
+
+  const full = match[0];
+  const parts = full.split(/[-–—]+/).map((p) => p.trim());
+  const startToken = parts[0] ?? "";
+  const endToken = parts[1] ?? "";
+  const isCurrent = /present|current/i.test(endToken);
+
+  const remainder = (line.slice(0, match.index) + line.slice((match.index ?? 0) + full.length))
+    .replace(/[,|]\s*$/, "")
+    .trim();
+
+  return {
+    start: normalizeDateToken(startToken) ?? "",
+    end: isCurrent ? null : normalizeDateToken(endToken),
+    isCurrent,
+    remainder,
+  };
+}
+
 // Every one of these mirrors an exact limit in
 // lib/resume-studio/validation/resume.validation.ts (createResumeSchema).
 // A customer's PDF triggered "[resume-studio CREATE] validation failed"
@@ -206,30 +275,84 @@ function parseSkillsBlock(block: string): SkillGroup[] {
   return groups;
 }
 
+// A customer's resume puts each job's title FIRST, then its bullets, then
+// a "Company, DateRange" line — and only THEN starts the next job title,
+// all without a blank line anywhere in between. The old chunk-per-blank-
+// line logic saw that whole block as ONE entry, with every other job's
+// bullets dumped into the first job's description. Detect this layout by
+// counting how many date-range lines land inside a single blank-line
+// chunk: exactly one (or zero) is the normal case — one entry, whose date
+// line (if any) supplies the parsed dateRange. Two or more means several
+// jobs got merged, so split right after each date-range line instead.
 function parseExperienceBlock(block: string): ExperienceEntry[] {
   if (!block) return [];
-  // Heuristic: split on blank lines into entries; first line = "Role, Company"
   const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
-  return chunks.map((chunk, i) => {
-    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
-    const header = lines[0] ?? "";
-    const [rolePart, companyPart] = header.split(/,|\|| at /i);
-    const bullets = clampList(
-      lines
-        .slice(1)
-        .map((l) => clamp(l.replace(/^[-•*]\s*/, ""), LIMITS.bulletLen))
-        .filter(Boolean),
-      LIMITS.experienceBulletsMax
-    );
+  const entries: ExperienceEntry[] = [];
+  let idx = 0;
 
-    return {
-      id: `exp-${i}`,
-      role: clamp((rolePart ?? "Role").trim(), LIMITS.companyOrRole),
-      company: clamp((companyPart ?? "Company").trim(), LIMITS.companyOrRole),
-      dateRange: { start: "", end: null, isCurrent: false },
-      bullets,
-    };
-  });
+  const makeEntry = (
+    roleLine: string,
+    bulletLines: string[],
+    dateLine: string | undefined,
+    fallbackCompany: string | undefined
+  ) => {
+    const [rolePart, companyPart] = roleLine.split(/,|\|| at /i);
+    const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
+    entries.push({
+      id: `exp-${idx++}`,
+      role: clamp((rolePart ?? roleLine ?? "Role").trim(), LIMITS.companyOrRole),
+      company: clamp(
+        (companyPart ?? dateMatch?.remainder ?? fallbackCompany ?? "Company").trim(),
+        LIMITS.companyOrRole
+      ),
+      dateRange: dateMatch
+        ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
+        : { start: "", end: null, isCurrent: false },
+      bullets: clampList(
+        bulletLines.map((l) => clamp(l.replace(/^[-•*]\s*/, ""), LIMITS.bulletLen)).filter(Boolean),
+        LIMITS.experienceBulletsMax
+      ),
+    });
+  };
+
+  for (const chunk of chunks) {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    const dateLineIndices = lines
+      .map((l, i) => (DATE_RANGE_REGEX.test(l) ? i : -1))
+      .filter((i) => i >= 0);
+
+    if (dateLineIndices.length <= 1) {
+      // Normal case: one entry per chunk (unchanged from before, except
+      // the date range — previously always blank — is now actually
+      // parsed when present, whether on the header line or its own line).
+      const header = lines[0] ?? "";
+      const dateOnOwnLine = dateLineIndices[0] === 1 ? lines[1] : undefined;
+      const dateLine = DATE_RANGE_REGEX.test(header) ? header : dateOnOwnLine;
+      const bulletsStart = dateOnOwnLine ? 2 : 1;
+      makeEntry(header, lines.slice(bulletsStart), dateLine, undefined);
+      continue;
+    }
+
+    // Merged-entries case: split right after each date-range line. Lines
+    // from the previous split point through this date line (inclusive)
+    // form one entry — first line is the role/title, the date line
+    // supplies company + dates, everything between is bullets.
+    let start = 0;
+    for (const dateIdx of dateLineIndices) {
+      const entryLines = lines.slice(start, dateIdx + 1);
+      makeEntry(entryLines[0] ?? "Role", entryLines.slice(1, -1), entryLines[entryLines.length - 1], undefined);
+      start = dateIdx + 1;
+    }
+    // Trailing lines after the last date line (e.g. a current/ongoing role
+    // with no closing date yet) still become their own entry rather than
+    // being silently dropped.
+    if (start < lines.length) {
+      const rest = lines.slice(start);
+      makeEntry(rest[0] ?? "Role", rest.slice(1), undefined, undefined);
+    }
+  }
+
+  return entries;
 }
 
 function parseEducationBlock(block: string): EducationEntry[] {
@@ -249,40 +372,76 @@ function parseEducationBlock(block: string): EducationEntry[] {
   });
 }
 
-// This was missing entirely — splitIntoSections() correctly isolated the
-// "projects" block, but parseResumeText() below never called anything to
-// turn it into ProjectEntry[]; it just hardcoded projects: [] every time,
-// so an imported resume's projects were silently dropped regardless of
-// how they were written (with or without a link/URL — link presence was
-// never actually part of this at all). Mirrors parseExperienceBlock's
-// heuristic: blank-line-separated chunks, first line = title, remaining
-// lines = bullets. A project link found within a chunk is attached to
-// that entry; its line is not also kept as a bullet.
+// Same merged-entries problem as parseExperienceBlock above, confirmed by
+// the same customer for her Projects section too ("sab ek hi heading me
+// aa rhe h" — all coming under one heading): a resume that writes
+// Title -> bullets -> "Date/Company" line, then straight into the next
+// project title with no blank line, gets read as ONE giant project with
+// every other project's bullets dumped in. Uses the identical detection —
+// count date-range lines inside a blank-line chunk; more than one means
+// several projects merged, so split right after each date line.
 function parseProjectsBlock(block: string): ProjectEntry[] {
   if (!block) return [];
   const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
-  return chunks.map((chunk, i) => {
-    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
-    const header = lines[0] ?? "";
-    const [namePart] = header.split(/,|\|/);
-    const links = extractLinks(chunk);
+  const entries: ProjectEntry[] = [];
+  let idx = 0;
+
+  const makeEntry = (titleLine: string, bulletLines: string[], dateLine: string | undefined) => {
+    const [namePart] = titleLine.split(/,|\|/);
+    const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
+    const links = extractLinks([titleLine, ...bulletLines, dateLine ?? ""].join("\n"));
 
     const bullets = clampList(
-      lines
-        .slice(1)
+      bulletLines
         .map((l) => l.replace(/^[-•*]\s*/, "").trim())
-        .filter((l) => l && !URL_TEST_REGEX.test(l))
+        .filter((l) => l && !URL_TEST_REGEX.test(l) && !DATE_RANGE_REGEX.test(l))
         .map((l) => clamp(l, LIMITS.bulletLen)),
       LIMITS.projectBulletsMax
     );
 
-    return {
-      id: `proj-${i}`,
-      name: clamp((namePart ?? header ?? "Project").trim(), LIMITS.projectName),
+    entries.push({
+      id: `proj-${idx++}`,
+      name: clamp((namePart ?? titleLine ?? "Project").trim(), LIMITS.projectName),
       bullets,
       link: links[0]?.url,
-    };
-  });
+      dateRange: dateMatch
+        ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
+        : undefined,
+    });
+  };
+
+  for (const chunk of chunks) {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    const dateLineIndices = lines
+      .map((l, i) => (DATE_RANGE_REGEX.test(l) ? i : -1))
+      .filter((i) => i >= 0);
+
+    if (dateLineIndices.length <= 1) {
+      // Normal case: one project per chunk. A date range can appear on
+      // the header line itself or on its own line right after it.
+      const header = lines[0] ?? "";
+      const dateOnOwnLine = dateLineIndices[0] === 1 ? lines[1] : undefined;
+      const dateLine = DATE_RANGE_REGEX.test(header) ? header : dateOnOwnLine;
+      const bulletsStart = dateOnOwnLine ? 2 : 1;
+      makeEntry(header, lines.slice(bulletsStart), dateLine);
+      continue;
+    }
+
+    // Merged-entries case, same logic as experience: split right after
+    // each date-range line.
+    let start = 0;
+    for (const dateIdx of dateLineIndices) {
+      const entryLines = lines.slice(start, dateIdx + 1);
+      makeEntry(entryLines[0] ?? "Project", entryLines.slice(1, -1), entryLines[entryLines.length - 1]);
+      start = dateIdx + 1;
+    }
+    if (start < lines.length) {
+      const rest = lines.slice(start);
+      makeEntry(rest[0] ?? "Project", rest.slice(1), undefined);
+    }
+  }
+
+  return entries;
 }
 
 /**
