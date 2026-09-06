@@ -9,23 +9,15 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, FileJson, FileText, FileType, RotateCcw, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowLeft, RotateCcw, TrendingDown, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EvaluationCard } from "./EvaluationCard";
 import { ScoreBadge, SectionLabel } from "./primitives";
-import { exportUrl } from "../api";
 import { interviewTypeLabel } from "../types";
-import type { AnsweredItem, ExportFormat, InterviewSession, SkillGap } from "../types";
+import type { AnsweredItem, InterviewSession, SkillGap } from "../types";
 
 const PRIORITY_TONE = { high: "pulse", medium: "signal", low: "neutral" } as const;
-
-const EXPORTS: { format: ExportFormat; label: string; icon: typeof FileText }[] = [
-  { format: "pdf", label: "PDF", icon: FileType },
-  { format: "docx", label: "Word", icon: FileText },
-  { format: "markdown", label: "Markdown", icon: FileText },
-  { format: "json", label: "JSON", icon: FileJson },
-];
 
 export function ReportView({
   session,
@@ -73,19 +65,6 @@ export function ReportView({
               Overall
             </p>
           </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {EXPORTS.map(({ format, label, icon: Icon }) => (
-            <a
-              key={format}
-              href={exportUrl(session.id, format)}
-              download
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-mist transition-colors hover:border-signal hover:text-signal"
-            >
-              <Icon size={13} /> {label} <Download size={12} />
-            </a>
-          ))}
         </div>
       </motion.div>
 
