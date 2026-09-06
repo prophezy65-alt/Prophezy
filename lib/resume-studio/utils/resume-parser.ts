@@ -38,7 +38,15 @@ const URL_TEST_REGEX = /(https?:\/\/[^\s,]+|(?:www\.)?(?:linkedin\.com|github\.c
 // branch inside parseExperienceBlock below).
 const MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
 const DATE_TOKEN = `(?:${MONTH}\\.?\\s+\\d{4}|\\d{4})`;
-const DATE_RANGE_REGEX = new RegExp(`${DATE_TOKEN}\\s*[-–—]+\\s*(?:${DATE_TOKEN}|present|current)`, "i");
+// FIX (bug: "internship start date detected, not end date"): the
+// separator only matched dash-family characters (-, –, —). Resumes that
+// write ranges as "Jun 2025 to Aug 2025" (word "to" instead of a dash)
+// failed the WHOLE regex before, meaning the parser fell back to reading
+// only a bare start-date-shaped token elsewhere on the line/next line —
+// which looked like "start captured, end missing". Now "to"/"until" are
+// accepted alongside dash characters.
+const RANGE_SEP = "(?:[-–—]+|\\s+to\\s+|\\s+until\\s+)";
+const DATE_RANGE_REGEX = new RegExp(`${DATE_TOKEN}\\s*${RANGE_SEP}\\s*(?:${DATE_TOKEN}|present|current)`, "i");
 const MONTH_NUMBERS: Record<string, string> = {
   jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
   jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
@@ -57,13 +65,19 @@ const MONTH_NUMBERS: Record<string, string> = {
 function normalizeDateToken(token: string): string | null {
   const t = token.trim().toLowerCase();
   if (t === "present" || t === "current") return null;
-  const monthMatch = t.match(/^([a-z]+)\.?\s+(\d{4})$/);
+  // FIX: previously anchored to the WHOLE string (^...$), so an end token
+  // with any trailing text attached (e.g. "Aug 2025 (Internship)", "2025.")
+  // matched nothing and silently returned null — looking like "start date
+  // detected, end date missing" even though the end date was right there.
+  // Searching for the date pattern anywhere in the token (not anchored to
+  // the end) fixes this while still requiring it to start the token.
+  const monthMatch = t.match(/^([a-z]+)\.?\s+(\d{4})/);
   if (monthMatch) {
     const monthKey = monthMatch[1]!.slice(0, 3);
     const num = MONTH_NUMBERS[monthKey];
     return num ? `${monthMatch[2]}-${num}` : monthMatch[2]!;
   }
-  const yearOnly = t.match(/^\d{4}$/);
+  const yearOnly = t.match(/^\d{4}/);
   return yearOnly ? yearOnly[0] : null;
 }
 
@@ -81,7 +95,11 @@ function extractDateRangeFromLine(line: string): ExtractedDateRange | null {
   if (!match) return null;
 
   const full = match[0];
-  const parts = full.split(/[-–—]+/).map((p) => p.trim());
+  // Split on the same separator set the regex matched on (dash chars, or
+  // the words "to"/"until") — previously this only split on dashes, so a
+  // "to"/"until" range that now matches DATE_RANGE_REGEX above would fail
+  // to split into two tokens here and silently produce no usable range.
+  const parts = full.split(new RegExp(RANGE_SEP, "i")).map((p) => p.trim());
   const startToken = parts[0] ?? "";
   const endToken = parts[1] ?? "";
   const isCurrent = /present|current/i.test(endToken);
@@ -154,7 +172,14 @@ function mergeBulletContinuationChunks(rawChunks: string[]): string[] {
   const chunks: string[] = [];
   for (const raw of rawChunks) {
     const firstLine = raw.split("\n")[0]?.trim() ?? "";
-    if (chunks.length > 0 && /^[-•*]\s+/.test(firstLine)) {
+    // FIX (bug: "same project's bullets becoming separate projects"): the
+    // old check only recognized "- • *" as bullet markers. Many PDF
+    // extractors emit other glyphs for bullets (●, ▪, ‣, ◦, ·, ○, ➤, »),
+    // and any of those went unrecognized, so every bullet under one
+    // project/job got treated as the start of a brand-new entry whenever
+    // there was a blank line between bullets. Broadened to cover the
+    // common set.
+    if (chunks.length > 0 && /^[-•*●▪‣◦·○➤»]\s+/.test(firstLine)) {
       chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}\n${raw}`;
     } else {
       chunks.push(raw);
@@ -254,6 +279,20 @@ export function splitIntoSections(text: string): Record<string, string> {
     if (matchedSection && trimmed.length < 40) {
       currentSection = matchedSection[0];
       sections[currentSection] = sections[currentSection] ?? [];
+      // FIX (bug: "Education not detected", could affect any section):
+      // when a PDF/DOCX squashes a section header and its first line of
+      // content onto the SAME visual line (common in dense/2-column
+      // layouts, e.g. "EDUCATION  B.Tech in Computer Science, XYZ
+      // University"), the header regex still matches (it only checks the
+      // start of the line), but the code used to just `continue`, silently
+      // discarding everything after the header keyword. Now the remainder
+      // of that line (after the matched header text) is kept and becomes
+      // the first line of the new section instead of being thrown away.
+      const headerRegex = SECTION_HEADERS[matchedSection[0]]!;
+      const afterHeader = trimmed.replace(headerRegex, "").replace(/^[:\-–—\s]+/, "").trim();
+      if (afterHeader) {
+        sections[currentSection]!.push(afterHeader);
+      }
       continue;
     }
 
@@ -307,6 +346,47 @@ function parseSkillsBlock(block: string): SkillGroup[] {
 // chunk: exactly one (or zero) is the normal case — one entry, whose date
 // line (if any) supplies the parsed dateRange. Two or more means several
 // jobs got merged, so split right after each date-range line instead.
+// FIX (bug: "internship tech stack not detected"): resumes commonly list
+// tech stack as its own line under a job/internship, e.g. "Tech Stack:
+// React, Node.js, MongoDB" or "Technologies used: Python, TensorFlow" —
+// this was never looked for at all, so techStack stayed unset and that
+// line was left sitting in `bullets` as if it were a regular bullet point.
+const TECH_STACK_LINE_REGEX = /^(?:[-•*●▪‣◦·○➤»]\s*)?(?:tech(?:nical)? stack|technologies(?: used)?|tools(?: used)?|stack)\s*[:\-]\s*(.+)$/i;
+
+function extractTechStackFromBullets(bulletLines: string[]): { techStack: string[] | undefined; remaining: string[] } {
+  const remaining: string[] = [];
+  let techStack: string[] | undefined;
+  for (const line of bulletLines) {
+    const match = line.trim().match(TECH_STACK_LINE_REGEX);
+    if (match && !techStack) {
+      techStack = clampList(
+        match[1]!.split(/[,•|]/).map((s) => clamp(s.trim(), LIMITS.skillItem)).filter(Boolean),
+        LIMITS.skillItemsMax
+      );
+    } else {
+      remaining.push(line);
+    }
+  }
+  return { techStack, remaining };
+}
+
+// FIX (bug: "experience location not tracking"): `location` exists on
+// ExperienceEntry/EducationEntry but was never populated — a company/role
+// line or the date-line remainder often carries it as a trailing
+// comma-separated segment, e.g. "Acme Corp, Bengaluru" or "Acme Corp |
+// Bengaluru, India | Jun 2025 - Aug 2025". Splitting the raw text on
+// commas and treating everything after the first segment as location
+// (when present) recovers this without touching unrelated fields.
+function splitCompanyAndLocation(raw: string | undefined): { company: string; location?: string } {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return { company: "" };
+  const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return { company: parts[0]!, location: parts.slice(1).join(", ") };
+  }
+  return { company: trimmed };
+}
+
 function parseExperienceBlock(block: string): ExperienceEntry[] {
   if (!block) return [];
   const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
@@ -319,22 +399,35 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
     dateLine: string | undefined,
     fallbackCompany: string | undefined
   ) => {
-    const [rolePart, companyPart] = roleLine.split(/,|\|| at /i);
+    const [rolePart, companyPart, locationFromRoleLine] = roleLine.split(/,|\|| at /i);
     const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
+
+    // Prefer an explicit 3rd segment on the role line ("Role, Company,
+    // City"); otherwise fall back to splitting whatever we do have
+    // (company cell, or the leftover text from the date line) on commas.
+    const { company, location: locationFromSplit } = splitCompanyAndLocation(
+      companyPart ?? dateMatch?.remainder ?? fallbackCompany
+    );
+
+    const role = clamp((rolePart ?? roleLine ?? "Role").trim(), LIMITS.companyOrRole);
+    const location = (locationFromRoleLine ?? locationFromSplit)?.trim();
+
+    const { techStack, remaining: cleanedBullets } = extractTechStackFromBullets(bulletLines);
+
     entries.push({
       id: `exp-${idx++}`,
-      role: clamp((rolePart ?? roleLine ?? "Role").trim(), LIMITS.companyOrRole),
-      company: clamp(
-        (companyPart ?? dateMatch?.remainder ?? fallbackCompany ?? "Company").trim(),
-        LIMITS.companyOrRole
-      ),
+      role,
+      company: clamp(company || "Company", LIMITS.companyOrRole),
+      location: location ? clamp(location, LIMITS.category) : undefined,
       dateRange: dateMatch
         ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
         : { start: "", end: null, isCurrent: false },
       bullets: clampList(
-        bulletLines.map((l) => clamp(l.replace(/^[-•*]\s*/, ""), LIMITS.bulletLen)).filter(Boolean),
+        cleanedBullets.map((l) => clamp(l.replace(/^[-•*●▪‣◦·○➤»]\s*/, ""), LIMITS.bulletLen)).filter(Boolean),
         LIMITS.experienceBulletsMax
       ),
+      isInternship: /intern/i.test(role) || /intern/i.test(company),
+      techStack,
     });
   };
 
@@ -378,19 +471,43 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
   return entries;
 }
 
+// FIX (bug: "education not detected" / dateRange & location always
+// blank): this previously used the header line only, never looked at any
+// other line in the chunk for dates, and hardcoded dateRange to blank
+// unconditionally — even when a date range (e.g. "2021 - 2025") was sitting
+// right there on the next line. Now it looks across the whole chunk for a
+// date-range line (same helper used by experience/projects) and also
+// recovers a location from a 3rd comma-separated segment on the header
+// line, e.g. "B.Tech in CS, XYZ University, City".
 function parseEducationBlock(block: string): EducationEntry[] {
   if (!block) return [];
-  const chunks = block.split(/\n{2,}/).filter((c) => c.trim());
+  const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
   return chunks.map((chunk, i) => {
     const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
     const header = lines[0] ?? "";
-    const [degreePart, institutionPart] = header.split(/,|\|/);
+    const [degreePart, institutionPart, locationPart] = header.split(/,|\|/);
+
+    const dateLineIdx = lines.findIndex((l) => DATE_RANGE_REGEX.test(l));
+    const dateLine = dateLineIdx >= 0 ? lines[dateLineIdx] : undefined;
+    const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
+
+    const { location: locationFromRemainder } = splitCompanyAndLocation(
+      institutionPart ?? dateMatch?.remainder
+    );
 
     return {
       id: `edu-${i}`,
       degree: clamp((degreePart ?? "Degree").trim(), LIMITS.degreeOrInstitution),
-      institution: clamp((institutionPart ?? "Institution").trim(), LIMITS.degreeOrInstitution),
-      dateRange: { start: "", end: null, isCurrent: false },
+      institution: clamp(
+        (institutionPart ? institutionPart.split(",")[0] : dateMatch?.remainder ?? "Institution")!.trim(),
+        LIMITS.degreeOrInstitution
+      ),
+      location: (locationPart ?? locationFromRemainder)
+        ? clamp((locationPart ?? locationFromRemainder)!.trim(), LIMITS.category)
+        : undefined,
+      dateRange: dateMatch
+        ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
+        : { start: "", end: null, isCurrent: false },
     };
   });
 }
@@ -416,7 +533,7 @@ function parseProjectsBlock(block: string): ProjectEntry[] {
 
     const bullets = clampList(
       bulletLines
-        .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+        .map((l) => l.replace(/^[-•*●▪‣◦·○➤»]\s*/, "").trim())
         .filter((l) => l && !URL_TEST_REGEX.test(l) && !DATE_RANGE_REGEX.test(l))
         .map((l) => clamp(l, LIMITS.bulletLen)),
       LIMITS.projectBulletsMax

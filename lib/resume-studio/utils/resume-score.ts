@@ -45,48 +45,69 @@ function scoreBullets(
   entries: (ExperienceEntry | ProjectEntry)[],
   label: string
 ): ScoreBreakdown {
-  // ProjectEntry has both `bullets: string[]` and an optional
-  // free-text `description` — if a project was entered with only a
-  // description paragraph (no separate bullet points added), the score
-  // used to see zero bullets and report "No project writing bullets
-  // found" even though real, gradeable content existed. Split any
-  // populated `description` into sentence-ish lines and treat those as
-  // bullets for scoring purposes; entries that already have `bullets`
-  // are unaffected.
-  const bullets = entries.flatMap((e) => {
-    if (e.bullets.length > 0) return e.bullets;
+  // FIX (per user feedback: "it would be better agar wo point out bhi krde
+  // wo parts jaha h issues" — the score should say WHERE the issue is, not
+  // just a bare percentage). Each bullet is now tracked alongside which
+  // entry it came from (job/project title), so weak bullets can be quoted
+  // and located instead of only counted.
+  const nameOf = (e: ExperienceEntry | ProjectEntry): string =>
+    "role" in e ? `${e.role} at ${e.company}` : e.name;
+
+  type SourcedBullet = { text: string; source: string };
+
+  const bullets: SourcedBullet[] = entries.flatMap((e) => {
+    const source = nameOf(e);
+    if (e.bullets.length > 0) return e.bullets.map((text) => ({ text, source }));
     const description = "description" in e ? e.description : undefined;
     if (!description) return [];
     return description
       .split(/(?<=[.!?])\s+|\n+/)
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((text) => ({ text, source }));
   });
+
   if (bullets.length === 0) {
     return { category: label, score: 0, maxScore: 100, reasons: [`No ${label.toLowerCase()} bullets found.`] };
   }
 
-  const withActionVerb = bullets.filter(bulletHasActionVerb).length;
-  const withNumbers = bullets.filter(bulletHasNumber).length;
-  const weak = bullets.filter(bulletHasWeakStarter).length;
+  const noActionVerb = bullets.filter((b) => !bulletHasActionVerb(b.text));
+  const noNumber = bullets.filter((b) => !bulletHasNumber(b.text));
+  const weakBullets = bullets.filter((b) => bulletHasWeakStarter(b.text));
 
-  const actionVerbRatio = withActionVerb / bullets.length;
-  const numberRatio = withNumbers / bullets.length;
-  const weakRatio = weak / bullets.length;
+  const actionVerbRatio = (bullets.length - noActionVerb.length) / bullets.length;
+  const numberRatio = (bullets.length - noNumber.length) / bullets.length;
+  const weakRatio = weakBullets.length / bullets.length;
 
   const score = Math.round(
     actionVerbRatio * 50 + numberRatio * 40 + (1 - weakRatio) * 10
   );
 
+  // Cap how many specific bullets get quoted per reason so a resume with
+  // many issues doesn't produce an unreadable wall of text — a few
+  // concrete examples are enough for someone to find and fix the pattern.
+  const MAX_EXAMPLES = 3;
+  const quoteExamples = (items: SourcedBullet[]) =>
+    items
+      .slice(0, MAX_EXAMPLES)
+      .map((b) => `  - "${b.text}" (${b.source})`)
+      .join("\n") + (items.length > MAX_EXAMPLES ? `\n  - …and ${items.length - MAX_EXAMPLES} more` : "");
+
   const reasons: string[] = [];
   if (actionVerbRatio < 0.6) {
-    reasons.push(`Only ${Math.round(actionVerbRatio * 100)}% of bullets start with a strong action verb.`);
+    reasons.push(
+      `Only ${Math.round(actionVerbRatio * 100)}% of bullets start with a strong action verb. Missing it in:\n${quoteExamples(noActionVerb)}`
+    );
   }
   if (numberRatio < 0.4) {
-    reasons.push(`Only ${Math.round(numberRatio * 100)}% of bullets include a measurable number.`);
+    reasons.push(
+      `Only ${Math.round(numberRatio * 100)}% of bullets include a measurable number. Missing one in:\n${quoteExamples(noNumber)}`
+    );
   }
-  if (weak > 0) {
-    reasons.push(`${weak} bullet(s) use weak phrasing like "responsible for" or "worked on".`);
+  if (weakBullets.length > 0) {
+    reasons.push(
+      `${weakBullets.length} bullet(s) use weak phrasing like "responsible for" or "worked on":\n${quoteExamples(weakBullets)}`
+    );
   }
   if (reasons.length === 0) {
     reasons.push("Strong, quantified, action-driven bullets.");

@@ -390,6 +390,55 @@ function ExportMenu({ exporting, onExport }: { exporting: ExportFormat | null; o
  *  the calendar icon opens a real native month picker via showPicker() for
  *  people who'd rather click than type; picking a date there fills the same
  *  text value. */
+// FIX (bug: "tech stack comma/space not being accepted"): the old inline
+// input derived its displayed value directly from the parsed array via
+// `.join(", ")` on every render. Since csvToArray() trims and drops empty
+// tokens, typing "React, " (comma-space, mid-typing the next item) parsed
+// to ["React"], which the very next render redisplayed as "React" — the
+// comma and space the user just typed were wiped out immediately, making
+// it impossible to ever type a second item. This component keeps its own
+// local text buffer so what's on screen isn't forced to round-trip through
+// the parsed array on every keystroke; the parent still receives the
+// cleanly parsed array via onChange.
+function TechStackField({
+  value,
+  onChange,
+  className,
+}: {
+  value: string[] | undefined;
+  onChange: (arr: string[]) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState((value ?? []).join(", "));
+  const lastEmitted = useRef<string[]>(value ?? []);
+
+  useEffect(() => {
+    // Only resync from the parent when the array changed for a reason
+    // OTHER than this field's own onChange (e.g. a different entry was
+    // loaded, or an external reset) — not on every keystroke here.
+    const incoming = value ?? [];
+    if (JSON.stringify(incoming) !== JSON.stringify(lastEmitted.current)) {
+      setText(incoming.join(", "));
+      lastEmitted.current = incoming;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <Input
+      placeholder="Tech stack (comma-separated)"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const arr = csvToArray(e.target.value);
+        lastEmitted.current = arr;
+        onChange(arr);
+      }}
+      className={className}
+    />
+  );
+}
+
 function DateField({
   label,
   value,
@@ -400,22 +449,41 @@ function DateField({
   onChange: (v: string) => void;
 }) {
   const pickerRef = useRef<HTMLInputElement>(null);
+  const yearPickerRef = useRef<HTMLInputElement>(null);
+  // FIX (bug: "project date ONLY accepting YYYY-MM"): the free-text field
+  // beside this button already accepted any text the user typed (including
+  // a bare year) — but the calendar-icon button, the obvious/discoverable
+  // way to enter a date, only ever opened a native <input type="month">,
+  // which cannot select a year alone. That made it feel like YYYY-MM was
+  // mandatory. A second "year only" picker mode is added so a bare-year
+  // entry (e.g. graduation year) has a real picker too, not just the
+  // text box.
+  const [mode, setMode] = useState<"month" | "year">(/^\d{4}$/.test(value) ? "year" : "month");
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-mist">{label}</label>
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-mist">{label}</label>
+        <button
+          type="button"
+          onClick={() => setMode((m) => (m === "month" ? "year" : "month"))}
+          className="text-[10px] text-mist underline decoration-dotted underline-offset-2 hover:text-ink"
+        >
+          {mode === "month" ? "Use year only" : "Use month + year"}
+        </button>
+      </div>
       <div className="relative">
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. 2024-06"
+          placeholder={mode === "year" ? "e.g. 2024" : "e.g. 2024-06"}
           className="pr-11"
         />
         <button
           type="button"
           aria-label="Pick date"
           onClick={() => {
-            const picker = pickerRef.current;
+            const picker = mode === "year" ? yearPickerRef.current : pickerRef.current;
             if (!picker) return;
             if ("showPicker" in picker && typeof picker.showPicker === "function") {
               try {
@@ -431,14 +499,29 @@ function DateField({
         >
           <CalendarDays size={16} />
         </button>
-        <input
-          ref={pickerRef}
-          type="month"
-          value={/^\d{4}-\d{2}$/.test(value) ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="pointer-events-none absolute h-0 w-0 opacity-0"
-          tabIndex={-1}
-        />
+        {mode === "year" ? (
+          <input
+            ref={yearPickerRef}
+            type="number"
+            inputMode="numeric"
+            min={1950}
+            max={2100}
+            step={1}
+            value={/^\d{4}$/.test(value) ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            className="pointer-events-none absolute h-0 w-0 opacity-0"
+            tabIndex={-1}
+          />
+        ) : (
+          <input
+            ref={pickerRef}
+            type="month"
+            value={/^\d{4}-\d{2}$/.test(value) ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            className="pointer-events-none absolute h-0 w-0 opacity-0"
+            tabIndex={-1}
+          />
+        )}
       </div>
     </div>
   );
@@ -565,7 +648,7 @@ function ExperienceEditor({ value, onChange }: { value: ExperienceEntry[]; onCha
               <DateField label="Start date" value={entry.dateRange.start} onChange={(v) => onChange(value.map((e2, j) => (j === i ? { ...e2, dateRange: { ...e2.dateRange, start: v } } : e2)))} />
               <DateField label="End date (blank = current)" value={entry.dateRange.end ?? ""} onChange={(v) => onChange(value.map((e2, j) => (j === i ? { ...e2, dateRange: { ...e2.dateRange, end: v, isCurrent: !v } } : e2)))} />
               <Input placeholder="Location" value={entry.location ?? ""} onChange={(e) => onChange(value.map((v, j) => (j === i ? { ...v, location: e.target.value } : v)))} />
-              <Input placeholder="Tech stack (comma-separated)" value={(entry.techStack ?? []).join(", ")} onChange={(e) => onChange(value.map((v, j) => (j === i ? { ...v, techStack: csvToArray(e.target.value) } : v)))} />
+              <TechStackField value={entry.techStack} onChange={(arr) => onChange(value.map((v, j) => (j === i ? { ...v, techStack: arr } : v)))} />
             </div>
             <textarea
               placeholder="One bullet per line"
@@ -637,7 +720,7 @@ function ProjectsEditor({ value, onChange }: { value: ProjectEntry[]; onChange: 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Input placeholder="Project name" value={entry.name} onChange={(e) => onChange(value.map((v, j) => (j === i ? { ...v, name: e.target.value } : v)))} />
               <Input placeholder="Link (optional)" value={entry.link ?? ""} onChange={(e) => onChange(value.map((v, j) => (j === i ? { ...v, link: e.target.value } : v)))} />
-              <Input placeholder="Tech stack (comma-separated)" value={(entry.techStack ?? []).join(", ")} onChange={(e) => onChange(value.map((v, j) => (j === i ? { ...v, techStack: csvToArray(e.target.value) } : v)))} className="sm:col-span-2" />
+              <TechStackField value={entry.techStack} onChange={(arr) => onChange(value.map((v, j) => (j === i ? { ...v, techStack: arr } : v)))} className="sm:col-span-2" />
             </div>
             <textarea
               placeholder="Description (optional)"
