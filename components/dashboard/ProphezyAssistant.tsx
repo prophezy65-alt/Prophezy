@@ -3,13 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Send, X, Loader2 } from "lucide-react";
+import { Send, X, Loader2, History, Plus, Trash2, ArrowLeft } from "lucide-react";
 
 const ACCENT = "#5ff2ff";
+const SESSION_STORAGE_KEY = "prophezy-assistant-session-id";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+interface ChatSessionSummary {
+  id: string;
+  title: string | null;
+  last_message_at: string | null;
+  created_at: string;
 }
 
 /** Inline recreation of the supplied Prophezy AI mark — no external asset file required. */
@@ -37,12 +45,27 @@ function ProphezyAiIcon({ size = 26 }: { size?: number }) {
   );
 }
 
+function formatSessionDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function ProphezyAssistant() {
   const [open, setOpen] = useState(false);
+  // "chat" = active conversation, "history" = list of past sessions.
+  const [view, setView] = useState<"chat" | "history">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +78,88 @@ export default function ProphezyAssistant() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, open]);
+
+  // Restore the last active conversation on load (e.g. after a page
+  // refresh) instead of always starting blank — this is the core of the
+  // "history not saving" fix: the session id now survives a reload, and
+  // its messages are re-fetched from the DB rather than lost.
+  useEffect(() => {
+    const savedId = typeof window !== "undefined" ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
+    if (savedId) {
+      loadSession(savedId, { silent: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function fetchSessions() {
+    setSessionsLoading(true);
+    try {
+      const res = await fetch("/api/chat");
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setSessions(data.sessions ?? []);
+    } catch {
+      // History list failing to load shouldn't block the rest of the widget.
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+
+  async function loadSession(sessionId: string, opts?: { silent?: boolean }) {
+    if (!opts?.silent) setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/chat/${sessionId}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const restored: ChatMessage[] = (data.messages ?? []).map((m: { role: string; content: string }) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.content,
+      }));
+      sessionIdRef.current = sessionId;
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+      setMessages(restored);
+      setView("chat");
+      setError(null);
+    } catch {
+      // Saved session id is stale/inaccessible (e.g. deleted) — fall back
+      // to a clean slate rather than getting stuck.
+      if (opts?.silent) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        sessionIdRef.current = null;
+      } else {
+        setError("Couldn't load that conversation.");
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function startNewChat() {
+    sessionIdRef.current = null;
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    setMessages([]);
+    setError(null);
+    setView("chat");
+  }
+
+  async function deleteSession(sessionId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    if (sessionIdRef.current === sessionId) {
+      startNewChat();
+    }
+    try {
+      await fetch(`/api/chat/${sessionId}`, { method: "DELETE" });
+    } catch {
+      // Best-effort — if this fails the session just reappears next time
+      // the list is refreshed, which is an acceptable fallback.
+    }
+  }
+
+  function openHistory() {
+    setView("history");
+    fetchSessions();
+  }
 
   async function handleSend() {
     const text = input.trim();
@@ -93,6 +198,12 @@ export default function ProphezyAssistant() {
           const marker = buffer.match(/^__SESSION__:([^\n]+)\n/);
           if (marker) {
             sessionIdRef.current = marker[1] ?? null;
+            // Persist as soon as we know it — this is what makes the
+            // conversation resumable after a refresh, and what a "new
+            // chat" (blank sessionId) turns into its own saved thread.
+            if (sessionIdRef.current) {
+              localStorage.setItem(SESSION_STORAGE_KEY, sessionIdRef.current);
+            }
             buffer = buffer.slice(marker[0].length);
             sessionMarkerConsumed = true;
           } else {
@@ -157,70 +268,150 @@ export default function ProphezyAssistant() {
           className="fixed bottom-40 right-4 z-50 flex h-[32rem] max-h-[calc(100vh-13rem)] w-96 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-white/10 bg-[#050505] shadow-2xl sm:bottom-28 sm:right-8 sm:max-h-[32rem] sm:max-w-[calc(100vw-3rem)]"
         >
           <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-3">
-            <ProphezyAiIcon size={20} />
-            <div>
-              <div className="text-sm font-medium text-white" style={{ fontFamily: "var(--font-display)" }}>
-                Prophezy AI
-              </div>
-              <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--dim)]" style={{ fontFamily: "var(--font-mono)" }}>
-                Knows your dashboard
-              </div>
-            </div>
-          </div>
-
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-            {messages.length === 0 && (
-              <p className="text-xs leading-relaxed text-white/40">
-                Ask about your resume, interview prep, flashcards, research, projects, or what to do next —
-                I can see your real progress across Prophezy.
-              </p>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-                <div
-                  className={`inline-block max-w-[85%] rounded-lg px-3 py-2 text-left text-sm ${
-                    m.role === "user" ? "bg-white/[0.06] text-white" : "bg-white/[0.02] text-white/80"
-                  }`}
-                >
-                  {m.content ? (
-                    <div className="prose-chat">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <Loader2 size={14} className="animate-spin text-white/40" />
-                  )}
-                </div>
-              </div>
-            ))}
-            {error && <p className="text-xs text-red-400">{error}</p>}
-          </div>
-
-          <div className="border-t border-white/10 p-3">
-            <div className="flex items-end gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Ask Prophezy AI…"
-                rows={1}
-                className="max-h-24 flex-1 resize-none bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
-              />
+            {view === "history" ? (
               <button
                 type="button"
-                onClick={handleSend}
-                disabled={sending || !input.trim()}
-                aria-label="Send message"
-                className="shrink-0 disabled:opacity-30"
+                onClick={() => setView("chat")}
+                aria-label="Back to chat"
+                className="text-white/50 hover:text-white"
               >
-                <Send size={16} style={{ color: ACCENT }} />
+                <ArrowLeft size={16} />
               </button>
+            ) : (
+              <ProphezyAiIcon size={20} />
+            )}
+            <div className="flex-1">
+              <div className="text-sm font-medium text-white" style={{ fontFamily: "var(--font-display)" }}>
+                {view === "history" ? "Chat history" : "Prophezy AI"}
+              </div>
+              {view === "chat" && (
+                <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--dim)]" style={{ fontFamily: "var(--font-mono)" }}>
+                  Knows your dashboard
+                </div>
+              )}
             </div>
+            {view === "chat" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={startNewChat}
+                  aria-label="Start new chat"
+                  title="New chat"
+                  className="text-white/50 hover:text-white"
+                >
+                  <Plus size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={openHistory}
+                  aria-label="View chat history"
+                  title="History"
+                  className="text-white/50 hover:text-white"
+                >
+                  <History size={16} />
+                </button>
+              </>
+            ) : null}
           </div>
+
+          {view === "history" ? (
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {sessionsLoading && (
+                <div className="flex items-center justify-center py-8 text-white/40">
+                  <Loader2 size={18} className="animate-spin" />
+                </div>
+              )}
+              {!sessionsLoading && sessions.length === 0 && (
+                <p className="px-2 py-6 text-center text-xs text-white/40">No past conversations yet.</p>
+              )}
+              {!sessionsLoading &&
+                sessions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => loadSession(s.id)}
+                    className={`group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] ${
+                      sessionIdRef.current === s.id ? "bg-white/[0.06]" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-white/85">{s.title || "New conversation"}</p>
+                      <p className="text-[10px] text-white/35">{formatSessionDate(s.last_message_at ?? s.created_at)}</p>
+                    </div>
+                    <span
+                      onClick={(e) => deleteSession(s.id, e)}
+                      role="button"
+                      aria-label="Delete conversation"
+                      className="shrink-0 rounded p-1 text-white/25 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </span>
+                  </button>
+                ))}
+            </div>
+          ) : (
+            <>
+              <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+                {historyLoading && (
+                  <div className="flex items-center justify-center py-8 text-white/40">
+                    <Loader2 size={18} className="animate-spin" />
+                  </div>
+                )}
+                {!historyLoading && messages.length === 0 && (
+                  <p className="text-xs leading-relaxed text-white/40">
+                    Ask about your resume, interview prep, flashcards, research, projects, or what to do next —
+                    I can see your real progress across Prophezy.
+                  </p>
+                )}
+                {!historyLoading &&
+                  messages.map((m, i) => (
+                    <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
+                      <div
+                        className={`inline-block max-w-[85%] rounded-lg px-3 py-2 text-left text-sm ${
+                          m.role === "user" ? "bg-white/[0.06] text-white" : "bg-white/[0.02] text-white/80"
+                        }`}
+                      >
+                        {m.content ? (
+                          <div className="prose-chat">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <Loader2 size={14} className="animate-spin text-white/40" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                {error && <p className="text-xs text-red-400">{error}</p>}
+              </div>
+
+              <div className="border-t border-white/10 p-3">
+                <div className="flex items-end gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    placeholder="Ask Prophezy AI…"
+                    rows={1}
+                    className="max-h-24 flex-1 resize-none bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={sending || !input.trim()}
+                    aria-label="Send message"
+                    className="shrink-0 disabled:opacity-30"
+                  >
+                    <Send size={16} style={{ color: ACCENT }} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </>

@@ -37,6 +37,30 @@ function buildSystemInstruction(contextSummary: string): string {
   ].join("\n\n");
 }
 
+export async function GET(req: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
+  // Returns the student's past chat sessions (newest first) so the
+  // frontend can render a "chat history" list — previously nothing ever
+  // read chat_sessions back out, so history was saved but never shown.
+  const { data, error } = await supabase
+    .from("chat_sessions")
+    .select("id, title, last_message_at, created_at")
+    .eq("user_id", user.id)
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return new Response(`Failed to load chat sessions: ${error.message}`, { status: 500 });
+  }
+
+  return Response.json({ sessions: data ?? [] });
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const {
