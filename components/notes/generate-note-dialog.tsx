@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, Upload, X } from "lucide-react";
+import { Loader2, Sparkles, Upload, X, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,17 @@ const LEARNING_MODES = [
   "last_minute", "quick_read", "deep_study", "concept_learning", "competitive_exam",
 ] as const;
 
+/**
+ * Wraps a bare topic string into an instruction the existing "plain_text"
+ * generation path already knows how to handle — no backend/schema changes
+ * needed. The AI is explicitly told there is no source document and to
+ * write from its own knowledge, so it doesn't try to "summarize" a topic
+ * name as if it were a passage of text.
+ */
+function buildTopicSourceText(topic: string): string {
+  return `Generate comprehensive study notes on the following topic, drawing entirely on your own subject-matter knowledge — there is no source document to summarize:\n\nTopic: ${topic.trim()}`;
+}
+
 export function GenerateNoteDialog({
   open,
   onClose,
@@ -74,10 +85,11 @@ export function GenerateNoteDialog({
   onCreated: (noteId: string) => void;
   onError: (message: string) => void;
 }) {
-  const [mode, setMode] = useState<"paste" | "upload">("paste");
+  const [mode, setMode] = useState<"paste" | "upload" | "topic">("paste");
   const [noteType, setNoteType] = useState<NoteType>("detailed");
   const [sourceText, setSourceText] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
+  const [topicInput, setTopicInput] = useState("");
   const [learningMode, setLearningMode] = useState<string>("");
   const [focusTopic, setFocusTopic] = useState("");
   const [folderId, setFolderId] = useState<string>(defaultFolderId ?? "");
@@ -115,7 +127,13 @@ export function GenerateNoteDialog({
   }
 
   function handleSubmit() {
-    if (!sourceText.trim()) {
+    const effectiveSourceText = mode === "topic" ? buildTopicSourceText(topicInput) : sourceText;
+
+    if (mode === "topic" && !topicInput.trim()) {
+      onError("Enter a topic first.");
+      return;
+    }
+    if (mode !== "topic" && !sourceText.trim()) {
       onError("Paste some text or upload a file first.");
       return;
     }
@@ -123,11 +141,11 @@ export function GenerateNoteDialog({
     const payload: GenerateNotePayload = {
       noteType,
       sourceKind: mode === "upload" && uploadInfo ? uploadInfo.sourceKind : "plain_text",
-      sourceText,
-      sourceTitle: sourceTitle || undefined,
+      sourceText: effectiveSourceText,
+      sourceTitle: sourceTitle || (mode === "topic" ? topicInput.trim() : undefined),
       uploadId: uploadInfo?.uploadId,
       learningMode: (learningMode || undefined) as GenerateNotePayload["learningMode"],
-      focusTopic: focusTopic || undefined,
+      focusTopic: focusTopic || (mode === "topic" ? topicInput.trim() : undefined),
       folderId: folderId || null,
     };
 
@@ -144,6 +162,7 @@ export function GenerateNoteDialog({
     setSourceText("");
     setSourceTitle("");
     setFocusTopic("");
+    setTopicInput("");
     setUploadedFileName(null);
     setUploadInfo(null);
     setMode("paste");
@@ -208,9 +227,18 @@ export function GenerateNoteDialog({
               >
                 Upload file
               </button>
+              <button
+                onClick={() => setMode("topic")}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  mode === "topic" ? "bg-signal/10 text-signal" : "text-mist hover:bg-ink/5"
+                )}
+              >
+                Generate from topic
+              </button>
             </div>
 
-            {mode === "paste" ? (
+            {mode === "paste" && (
               <textarea
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
@@ -218,7 +246,9 @@ export function GenerateNoteDialog({
                 rows={8}
                 className="w-full rounded-xl border border-border bg-surface/40 p-4 text-sm text-ink placeholder:text-mist/70 focus:border-signal focus:outline-none focus:ring-2 focus:ring-signal/30"
               />
-            ) : (
+            )}
+
+            {mode === "upload" && (
               <div>
                 <input
                   ref={fileInputRef}
@@ -242,20 +272,37 @@ export function GenerateNoteDialog({
                 )}
               </div>
             )}
+
+            {mode === "topic" && (
+              <div className="rounded-xl border border-border bg-surface/30 p-4">
+                <div className="mb-2 flex items-center gap-2 text-xs text-mist">
+                  <Lightbulb size={14} className="text-signal" />
+                  No source needed — the AI writes notes on this topic from its own knowledge.
+                </div>
+                <Input
+                  placeholder="e.g. Photosynthesis, The French Revolution, Big-O notation…"
+                  value={topicInput}
+                  onChange={(e) => setTopicInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              placeholder="Title (optional)"
-              value={sourceTitle}
-              onChange={(e) => setSourceTitle(e.target.value)}
-            />
-            <Input
-              placeholder="Focus topic (optional)"
-              value={focusTopic}
-              onChange={(e) => setFocusTopic(e.target.value)}
-            />
-          </div>
+          {mode !== "topic" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                placeholder="Title (optional)"
+                value={sourceTitle}
+                onChange={(e) => setSourceTitle(e.target.value)}
+              />
+              <Input
+                placeholder="Focus topic (optional)"
+                value={focusTopic}
+                onChange={(e) => setFocusTopic(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <select
