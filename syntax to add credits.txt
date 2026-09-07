@@ -5,3 +5,31 @@ select add_credits(
   'system',
   'Manual credit adjustment via admin'
 );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+select admin_set_user_plan(
+  (select id from auth.users where email = 'YOUR_ADMIN_EMAIL@example.com'),
+  (select id from auth.users where email = 'someone@example.com'),
+  'premium',
+  'Manual plan change via admin'
+);
