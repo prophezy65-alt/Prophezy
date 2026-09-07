@@ -55,28 +55,50 @@ export class CreditRepository {
     return { userId: data.user_id, balance: data.balance, updatedAt: data.updated_at };
   }
 
-  /** The full plan + balance + usage snapshot from public.credit_summary. */
-  async getSummary(userId: string): Promise<CreditSummary | null> {
-    const { data, error } = await this.db
-      .from("credit_summary")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+  /** The full plan + balance + usage snapshot from public.credit_summary.
+   *
+   * MONTHLY RESET FIX: calls public.get_credit_summary() (RPC) instead of
+   * selecting the view directly. That RPC runs
+   * public.ensure_own_current_period() first, which is a no-op unless the
+   * caller's billing period has actually elapsed, in which case it resets
+   * the balance to the current plan's allowance before this read happens —
+   * see 20260906090000_credit_system_monthly_reset.sql. Without this, a
+   * page load in a new month would show whatever (possibly zero) balance
+   * was left over from the previous period until something else happened
+   * to trigger a reset. */
+  async getSummary(_userId: string): Promise<CreditSummary | null> {
+    // _userId kept for signature compatibility with existing callers;
+    // get_credit_summary() resolves auth.uid() internally (self-service,
+    // same pattern as spend()/canSpend() below) and can only ever return
+    // the caller's own row.
+    const { data, error } = await this.db.rpc("get_credit_summary");
     if (error) throw new CreditSystemError("Failed to load credit summary", error);
-    if (!data) return null;
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+    if (!row) return null;
     return {
-      userId: data.user_id,
-      planId: data.plan_id,
-      planName: data.plan_name,
-      monthlyCredits: data.monthly_credits,
-      creditsRemaining: data.credits_remaining,
-      creditsUsedThisPeriod: data.credits_used_this_period,
-      usagePercentage: Number(data.usage_percentage),
-      subscriptionStatus: data.subscription_status,
-      currentPeriodStart: data.current_period_start,
-      currentPeriodEnd: data.current_period_end,
-      balanceUpdatedAt: data.balance_updated_at,
+      userId: row.user_id as string,
+      planId: row.plan_id as CreditSummary["planId"],
+      planName: row.plan_name as string,
+      monthlyCredits: row.monthly_credits as number,
+      creditsRemaining: row.credits_remaining as number,
+      creditsUsedThisPeriod: row.credits_used_this_period as number,
+      usagePercentage: Number(row.usage_percentage),
+      subscriptionStatus: row.subscription_status as CreditSummary["subscriptionStatus"],
+      currentPeriodStart: row.current_period_start as string | null,
+      currentPeriodEnd: row.current_period_end as string | null,
+      balanceUpdatedAt: row.balance_updated_at as string,
     };
+  }
+
+  /** Runs the same monthly-period check getSummary()/spend()/canSpend()
+   * already trigger internally, without needing a balance/summary read —
+   * used by callers (e.g. getApplicationUnlocksRemaining, which reads
+   * credit_transactions directly rather than through credit_summary) that
+   * need the guarantee on its own. Idempotent, safe to call as often as
+   * needed; a no-op unless the caller's period has actually elapsed. */
+  async ensureCurrentPeriod(): Promise<void> {
+    const { error } = await this.db.rpc("ensure_own_current_period");
+    if (error) throw new CreditSystemError("Failed to check billing period", error);
   }
 
   async getCurrentPlan(userId: string): Promise<Plan | null> {

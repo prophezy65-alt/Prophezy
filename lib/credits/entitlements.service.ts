@@ -17,6 +17,8 @@
  * which in turn only ever call the SECURITY DEFINER Postgres functions.
  */
 
+import { createClient } from "@/lib/supabase/server";
+import { CreditRepository } from "./credit.repository";
 import { getCreditSummary, getCurrentPlan, getApplicationUnlocksRemaining, getFeatureCreditCost } from "./credit.service";
 import { getMonthlyApplicationUnlockAllowance } from "./credit.service";
 import type { Entitlements } from "./types";
@@ -29,6 +31,19 @@ import type { Entitlements } from "./types";
  * client-supplied plan, and there is no parameter for one.
  */
 export async function getEntitlements(userId: string): Promise<Entitlements | null> {
+  // MONTHLY RESET FIX: getCreditSummary() and getApplicationUnlocksRemaining()
+  // each independently guarantee the current billing period before reading
+  // (see credit.repository.ts / 20260906090000_credit_system_monthly_reset.sql),
+  // but getCurrentPlan() does not — it's a plain table read with no reset
+  // logic of its own. Running Promise.all below without first awaiting a
+  // reset could, in the rare case this exact call is what triggers a
+  // period rollover, return an already-reset credit summary alongside a
+  // stale (pre-downgrade) plan from the parallel getCurrentPlan() call.
+  // Resolving the reset here first, synchronously, means every read below
+  // is guaranteed to see the same, already-settled period.
+  const db = await createClient();
+  await new CreditRepository(db).ensureCurrentPeriod();
+
   const [summary, plan, applicationUnlocksRemaining] = await Promise.all([
     getCreditSummary(userId),
     getCurrentPlan(userId),

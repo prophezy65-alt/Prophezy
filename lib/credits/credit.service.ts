@@ -56,13 +56,20 @@ export async function getCurrentPlan(userId: string): Promise<Plan | null> {
  * — undercounting a cap is the safe direction, never overcounting it.
  */
 export async function getApplicationUnlocksRemaining(userId: string): Promise<number | null> {
+  const db = await createClient();
+  // MONTHLY RESET FIX: this reads credit_transactions directly (not
+  // through credit_summary), so it needs its own explicit period check —
+  // getCreditSummary()'s reset alone wouldn't cover this call site. A
+  // no-op unless the period has actually elapsed. See
+  // 20260906090000_credit_system_monthly_reset.sql.
+  await new CreditRepository(db).ensureCurrentPeriod();
+
   const plan = await getCurrentPlan(userId);
   if (!plan) return null;
 
   const limit = getMonthlyApplicationUnlockAllowance(plan);
   if (limit === null) return null;
 
-  const db = await createClient();
   const used = await new CreditRepository(db).countFeatureUsageSinceLastAllocation(
     userId,
     CREDIT_FEATURES.INTERNSHIP_APPLICATION_UNLOCK
