@@ -387,6 +387,42 @@ function splitCompanyAndLocation(raw: string | undefined): { company: string; lo
   return { company: trimmed };
 }
 
+// FIX (bug: "bullet points detected as new project" / "internship
+// experience company+role scrambled when merged"): shared by both
+// parseExperienceBlock and parseProjectsBlock. When a PDF extracts a
+// resume section with NO blank lines between entries at all (very common
+// — this is exactly how column-based PDF text extraction behaves), every
+// project/job in the section collapses into one giant chunk. The old
+// "merged-entries" logic assumed the date line marks the END of an entry,
+// right before the next title starts — but the overwhelmingly common
+// real layout is the opposite: the date sits on the SAME line as the
+// title/company, marking the START of each entry (e.g. "Future Tech
+// Vision Jun 2026–Present" immediately followed by "Software Testing
+// Intern (Remote)" then bullets). Under the old end-of-entry assumption, a
+// bullet line got misread as the next entry's title, and the real
+// title/company was silently dropped. Anchoring on non-bullet lines that
+// contain a date range — the actual start of each entry — fixes this.
+function splitAnchoredEntries(
+  lines: string[],
+  isBulletLine: (l: string) => boolean
+): { dateLine: string; headerLine: string | undefined; bulletLines: string[] }[] {
+  const anchors = lines
+    .map((l, i) => (DATE_RANGE_REGEX.test(l) && !isBulletLine(l) ? i : -1))
+    .filter((i) => i >= 0);
+
+  if (anchors.length === 0) return [];
+
+  return anchors.map((start, a) => {
+    const end = a + 1 < anchors.length ? anchors[a + 1]! : lines.length;
+    const entryLines = lines.slice(start, end);
+    const dateLine = entryLines[0]!;
+    const bulletStartIdx = entryLines.findIndex((l, i) => i > 0 && isBulletLine(l));
+    const header = bulletStartIdx === -1 ? entryLines.slice(1) : entryLines.slice(1, bulletStartIdx);
+    const bulletLines = bulletStartIdx === -1 ? [] : entryLines.slice(bulletStartIdx);
+    return { dateLine, headerLine: header[0], bulletLines };
+  });
+}
+
 function parseExperienceBlock(block: string): ExperienceEntry[] {
   if (!block) return [];
   const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
@@ -399,7 +435,15 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
     dateLine: string | undefined,
     fallbackCompany: string | undefined
   ) => {
-    const [rolePart, companyPart, locationFromRoleLine] = roleLine.split(/,|\|| at /i);
+    // FIX (bug: "experience location not tracking", extended): a very
+    // common resume shape is "Role (Remote)" / "Role (On-site)" / "Role
+    // (Bengaluru)" — the location/work-mode sits in a trailing parenthetical
+    // on the role line itself, which nothing was reading before.
+    const parenMatch = roleLine.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    const roleLineWithoutParen = parenMatch ? parenMatch[1]! : roleLine;
+    const locationFromParen = parenMatch ? parenMatch[2] : undefined;
+
+    const [rolePart, companyPart, locationFromRoleLine] = roleLineWithoutParen.split(/,|\|| at /i);
     const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
 
     // Prefer an explicit 3rd segment on the role line ("Role, Company,
@@ -409,8 +453,8 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
       companyPart ?? dateMatch?.remainder ?? fallbackCompany
     );
 
-    const role = clamp((rolePart ?? roleLine ?? "Role").trim(), LIMITS.companyOrRole);
-    const location = (locationFromRoleLine ?? locationFromSplit)?.trim();
+    const role = clamp((rolePart ?? roleLineWithoutParen ?? "Role").trim(), LIMITS.companyOrRole);
+    const location = (locationFromRoleLine ?? locationFromParen ?? locationFromSplit)?.trim();
 
     const { techStack, remaining: cleanedBullets } = extractTechStackFromBullets(bulletLines);
 
@@ -431,6 +475,8 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
     });
   };
 
+  const isBulletLine = (l: string) => /^[-•*●▪‣◦·○➤»]\s+/.test(l);
+
   for (const chunk of chunks) {
     const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
     const dateLineIndices = lines
@@ -449,22 +495,17 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
       continue;
     }
 
-    // Merged-entries case: split right after each date-range line. Lines
-    // from the previous split point through this date line (inclusive)
-    // form one entry — first line is the role/title, the date line
-    // supplies company + dates, everything between is bullets.
-    let start = 0;
-    for (const dateIdx of dateLineIndices) {
-      const entryLines = lines.slice(start, dateIdx + 1);
-      makeEntry(entryLines[0] ?? "Role", entryLines.slice(1, -1), entryLines[entryLines.length - 1], undefined);
-      start = dateIdx + 1;
+    // Merged-entries case: see splitAnchoredEntries above for why this
+    // anchors on date-bearing lines as entry STARTS, not ends.
+    const anchoredEntries = splitAnchoredEntries(lines, isBulletLine);
+    if (anchoredEntries.length === 0) {
+      // No usable anchor found — fall back to treating the whole chunk
+      // as one entry rather than silently dropping it.
+      makeEntry(lines[0] ?? "Role", lines.slice(1), undefined, undefined);
+      continue;
     }
-    // Trailing lines after the last date line (e.g. a current/ongoing role
-    // with no closing date yet) still become their own entry rather than
-    // being silently dropped.
-    if (start < lines.length) {
-      const rest = lines.slice(start);
-      makeEntry(rest[0] ?? "Role", rest.slice(1), undefined, undefined);
+    for (const { dateLine, headerLine, bulletLines } of anchoredEntries) {
+      makeEntry(headerLine ?? dateLine, bulletLines, dateLine, undefined);
     }
   }
 
@@ -479,57 +520,107 @@ function parseExperienceBlock(block: string): ExperienceEntry[] {
 // date-range line (same helper used by experience/projects) and also
 // recovers a location from a 3rd comma-separated segment on the header
 // line, e.g. "B.Tech in CS, XYZ University, City".
+// FIX (bug: "education not detected" — confirmed against a real resume
+// where only the college showed, not either school): this resume's
+// Education section has ZERO blank lines between entries at all (common
+// PDF-extraction behavior), so the old `\n{2,}`-based chunk split treated
+// the entire section — college AND both schools — as a single chunk,
+// and only ever produced one entry from it. Education entries reliably
+// have a parenthesized year or year-range right after the institution
+// name (e.g. "COER University, Roorkee (2025–2029)", "Doon Presidency
+// School, Dehradun (2024)") — anchoring on that pattern splits entries
+// correctly whether or not blank lines are present.
+const EDU_YEAR_ANCHOR_REGEX = /\(\s*(\d{4})\s*(?:[–—-]\s*(\d{4}))?\s*\)/;
+
 function parseEducationBlock(block: string): EducationEntry[] {
   if (!block) return [];
-  const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
-  return chunks.map((chunk, i) => {
-    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
-    const header = lines[0] ?? "";
-    const [degreePart, institutionPart, locationPart] = header.split(/,|\|/);
+  const allLines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+  const anchorIdxs = allLines
+    .map((l, i) => (EDU_YEAR_ANCHOR_REGEX.test(l) ? i : -1))
+    .filter((i) => i >= 0);
 
-    const dateLineIdx = lines.findIndex((l) => DATE_RANGE_REGEX.test(l));
-    const dateLine = dateLineIdx >= 0 ? lines[dateLineIdx] : undefined;
-    const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
+  // No recognizable "(year)" anchor anywhere — fall back to the previous
+  // blank-line-chunk behavior rather than losing data outright.
+  if (anchorIdxs.length === 0) {
+    const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
+    return chunks.map((chunk, i) => parseEducationEntry(chunk.split("\n").map((l) => l.trim()).filter(Boolean), i));
+  }
 
-    const { location: locationFromRemainder } = splitCompanyAndLocation(
-      institutionPart ?? dateMatch?.remainder
-    );
-
-    return {
-      id: `edu-${i}`,
-      degree: clamp((degreePart ?? "Degree").trim(), LIMITS.degreeOrInstitution),
-      institution: clamp(
-        (institutionPart ? institutionPart.split(",")[0] : dateMatch?.remainder ?? "Institution")!.trim(),
-        LIMITS.degreeOrInstitution
-      ),
-      location: (locationPart ?? locationFromRemainder)
-        ? clamp((locationPart ?? locationFromRemainder)!.trim(), LIMITS.category)
-        : undefined,
-      dateRange: dateMatch
-        ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
-        : { start: "", end: null, isCurrent: false },
-    };
+  return anchorIdxs.map((start, a) => {
+    const end = a + 1 < anchorIdxs.length ? anchorIdxs[a + 1]! : allLines.length;
+    return parseEducationEntry(allLines.slice(start, end), a);
   });
 }
 
-// Same merged-entries problem as parseExperienceBlock above, confirmed by
-// the same customer for her Projects section too ("sab ek hi heading me
-// aa rhe h" — all coming under one heading): a resume that writes
-// Title -> bullets -> "Date/Company" line, then straight into the next
-// project title with no blank line, gets read as ONE giant project with
-// every other project's bullets dumped in. Uses the identical detection —
-// count date-range lines inside a blank-line chunk; more than one means
-// several projects merged, so split right after each date line.
+function parseEducationEntry(lines: string[], i: number): EducationEntry {
+  const headerIdx = lines.findIndex((l) => EDU_YEAR_ANCHOR_REGEX.test(l));
+  const header = lines[headerIdx >= 0 ? headerIdx : 0] ?? "";
+  const restLines = lines.filter((_, idx) => idx !== (headerIdx >= 0 ? headerIdx : 0));
+
+  const parenMatch = header.match(EDU_YEAR_ANCHOR_REGEX);
+  const dateRange = parenMatch
+    ? { start: parenMatch[1]!, end: parenMatch[2] ?? parenMatch[1]!, isCurrent: false }
+    : { start: "", end: null, isCurrent: false };
+
+  // Institution name/location sits before the "(", with any trailing
+  // "marks/CGPA" table-column text (2+ spaces apart, from PDF table
+  // extraction) stripped off.
+  const parenIdx = header.indexOf("(");
+  const beforeParen = (parenIdx >= 0 ? header.slice(0, parenIdx) : header).trim();
+  const institutionRaw = beforeParen.split(/\s{2,}/)[0]!.trim();
+  const { company: institution, location } = splitCompanyAndLocation(institutionRaw);
+
+  // Whatever's left (degree line, "12th — ISC (CISCE)", etc.) becomes the
+  // degree field — previously this was always blank.
+  const degree = restLines.join(", ").trim();
+
+  return {
+    id: `edu-${i}`,
+    institution: clamp(institution || beforeParen || "Institution", LIMITS.degreeOrInstitution),
+    degree: clamp(degree || "Degree", LIMITS.degreeOrInstitution),
+    location: location ? clamp(location, LIMITS.category) : undefined,
+    dateRange,
+  };
+}
+
+// FIX (bug: "bullet points detected as new project", "1-2 project ka
+// sahi title le nhi rha" — confirmed against a real resume): same root
+// cause as education above — this resume's Projects section has ZERO
+// blank lines between projects, so the whole section collapses into one
+// chunk. The old "merged-entries" fallback assumed the date line marks
+// the END of an entry, right before the next title — but this resume (and
+// most real ones) puts the date on the SAME line as the title, marking
+// the START of each entry. Under the old assumption, a bullet line got
+// misread as the next project's title, and the true title was dropped.
+// See splitAnchoredEntries() above, shared with parseExperienceBlock.
 function parseProjectsBlock(block: string): ProjectEntry[] {
   if (!block) return [];
   const chunks = mergeBulletContinuationChunks(block.split(/\n{2,}/).filter((c) => c.trim()));
   const entries: ProjectEntry[] = [];
   let idx = 0;
+  const isBulletLine = (l: string) => /^[-•*●▪‣◦·○➤»]\s+/.test(l);
 
   const makeEntry = (titleLine: string, bulletLines: string[], dateLine: string | undefined) => {
     const [namePart] = titleLine.split(/,|\|/);
     const dateMatch = dateLine ? extractDateRangeFromLine(dateLine) : null;
     const links = extractLinks([titleLine, ...bulletLines, dateLine ?? ""].join("\n"));
+
+    // FIX (bug: "internship/project tech stack not detected", extended to
+    // projects): a very common layout is "Project Name | Tech1, Tech2
+    // <date range>" all on the title line — the segment after the "|" and
+    // before the date was never read at all. Pulled into `techStack` now.
+    let techStack: string[] | undefined;
+    if (titleLine.includes("|")) {
+      const afterPipe = titleLine.split("|").slice(1).join("|").trim();
+      const dateInAfterPipe = afterPipe.match(DATE_RANGE_REGEX);
+      const techStackRaw = dateInAfterPipe ? afterPipe.slice(0, dateInAfterPipe.index).trim() : afterPipe;
+      if (techStackRaw) {
+        techStack = clampList(
+          techStackRaw.split(",").map((s) => clamp(s.trim(), LIMITS.skillItem)).filter(Boolean),
+          LIMITS.skillItemsMax
+        );
+      }
+    }
 
     const bullets = clampList(
       bulletLines
@@ -543,6 +634,7 @@ function parseProjectsBlock(block: string): ProjectEntry[] {
       id: `proj-${idx++}`,
       name: clamp((namePart ?? titleLine ?? "Project").trim(), LIMITS.projectName),
       bullets,
+      techStack,
       link: links[0]?.url,
       dateRange: dateMatch
         ? { start: dateMatch.start, end: dateMatch.end, isCurrent: dateMatch.isCurrent }
@@ -567,17 +659,22 @@ function parseProjectsBlock(block: string): ProjectEntry[] {
       continue;
     }
 
-    // Merged-entries case, same logic as experience: split right after
-    // each date-range line.
-    let start = 0;
-    for (const dateIdx of dateLineIndices) {
-      const entryLines = lines.slice(start, dateIdx + 1);
-      makeEntry(entryLines[0] ?? "Project", entryLines.slice(1, -1), entryLines[entryLines.length - 1]);
-      start = dateIdx + 1;
+    // Merged-entries case: see splitAnchoredEntries above for why this
+    // anchors on date-bearing lines as entry STARTS, not ends — this is
+    // exactly the shape that was turning bullet #2 of a project into its
+    // own fake "project" with the bullet text as the title.
+    const anchoredEntries = splitAnchoredEntries(lines, isBulletLine);
+    if (anchoredEntries.length === 0) {
+      makeEntry(lines[0] ?? "Project", lines.slice(1), undefined);
+      continue;
     }
-    if (start < lines.length) {
-      const rest = lines.slice(start);
-      makeEntry(rest[0] ?? "Project", rest.slice(1), undefined);
+    for (const { dateLine, headerLine, bulletLines } of anchoredEntries) {
+      // Projects normally have no separate header/role line — the title
+      // and date share one line — so the anchor line itself is the title.
+      // In the rare case an extra header line does appear before the
+      // first bullet, keep it as leading content rather than dropping it.
+      const combinedBullets = headerLine ? [headerLine, ...bulletLines] : bulletLines;
+      makeEntry(dateLine, combinedBullets, dateLine);
     }
   }
 
