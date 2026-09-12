@@ -139,8 +139,8 @@ export default function SettingsClient({ profile, creditSummary, applicationUnlo
                       </p>
                       <p className="text-xs text-white/80">
                         {creditSummary.planId === "free"
-                          ? "More credits, the full research library, and priority AI — from ₹75/month."
-                          : "Unlimited internship unlocks and the full platform, unlocked — from ₹100/month."}
+                          ? "More credits, the full research library, and priority AI — from ₹79/month."
+                          : "Unlimited internship unlocks and the full platform, unlocked — from ₹99/month."}
                       </p>
                     </div>
                   </div>

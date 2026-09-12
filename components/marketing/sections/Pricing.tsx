@@ -36,7 +36,7 @@ const TIERS = [
   {
     id: "pro" as const,
     name: "Pro",
-    price: "₹75",
+    price: "₹79",
     period: "/ month",
     highlight: true,
     credits: "500 credits/month",
@@ -62,7 +62,7 @@ const TIERS = [
   {
     id: "premium" as const,
     name: "Premium",
-    price: "₹100",
+    price: "₹99",
     period: "/ month",
     highlight: false,
     credits: "700 credits/month",

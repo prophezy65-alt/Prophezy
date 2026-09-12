@@ -25,13 +25,13 @@ export type { PayablePlanId } from "./types";
 export const PLAN_PRICES: Record<PayablePlanId, PlanPrice> = {
   pro: {
     planTier: "pro",
-    amountInr: 75,
+    amountInr: 79,
     credits: 500,
     internshipUnlocks: 25,
   },
   premium: {
     planTier: "premium",
-    amountInr: 100,
+    amountInr: 99,
     credits: 700,
     internshipUnlocks: null, // unlimited
   },
